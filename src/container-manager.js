@@ -48,6 +48,34 @@ exports.setHttpsHelper = function (helper) {
 	});
 };
 
+//
+// Generate ZMQ keys
+// { public: 'SOME_PUB_KEY', secret: 'SOME_PRIVATE_KEY' }
+//
+// pub key goes to apps
+// privet key is shared with stores
+//
+const zmq = require('zeromq')
+const zmq_keys = zmq.zmqCurveKeypair();
+console.log("zmq_keys:: ",zmq_keys)
+
+docker.createSecret({
+	"Name": "databox_ZMQ_PUBLIC_KEY",
+	"Data": Buffer.from(zmq_keys.public).toString('base64')
+})
+.catch((err) => {
+	console.log('[ERROR] creating secret databox_ZMQ_PUBLIC_KEY', err)
+})
+
+docker.createSecret({
+	"Name": "databox_ZMQ_SECRET_KEY",
+	"Data": Buffer.from(zmq_keys.secret).toString('base64')
+})
+.catch((err) => {
+	console.log('[ERROR] creating secret databox_ZMQ_SECRET_KEY', err)
+})
+
+
 const install = async function (sla) {
 	return new Promise(async (resolve, reject) => {
 
@@ -185,6 +213,7 @@ function removeSecret(name) {
 }
 
 const createSecrets = async function (config, sla) {
+	
 	function addSecret(filename, name, id) {
 		config.TaskTemplate.ContainerSpec.secrets.push({
 			"SecretName": name, "SecretID": id, "File": {
@@ -204,32 +233,44 @@ const createSecrets = async function (config, sla) {
 			},
 			"Data": data
 		})
-			.then((secret) => {
-				addSecret(filename, name, secret.id);
-				return {"name": name, "id": secret.id};
-			})
-			.catch((err) => {
-				console.log('[ERROR] creating secret ' + name, err)
-			});
+		.then((secret) => {
+			addSecret(filename, name, secret.id);
+			return {"name": name, "id": secret.id};
+		})
+		.catch((err) => {
+			console.log('[ERROR] creating secret ' + name, err)
+		});
 	}
 
 	console.log("createSecrets");
 
 	//HTTPS certs Json
-	//TODO remove this!!
 	const certJson = await httpsHelper.createClientCert(sla.localContainerName);
 	const parsedCert = JSON.parse(certJson);
 	const pem = parsedCert.clientprivate + parsedCert.clientpublic + parsedCert.clientcert;
+
 	const arbiterToken = await generateArbiterToken(sla.localContainerName);
-	await Promise.all([
+
+	let proms = [
 		docker.getSecret('databox_DATABOX_ROOT_CA').inspect().then((rootCA) => {
 			addSecret("DATABOX_ROOT_CA", rootCA.Spec.Name, rootCA.ID)
+		}),
+		docker.getSecret('databox_ZMQ_PUBLIC_KEY').inspect().then((key) => {
+			addSecret("ZMQ_PUBLIC_KEY", key.Spec.Name, key.ID)
 		}),
 		createSecret(sla.localContainerName.toUpperCase() + '_PEM', Buffer.from(certJson).toString('base64'), "DATABOX_PEM"),
 		createSecret(sla.localContainerName.toUpperCase() + '.pem', Buffer.from(pem).toString('base64'), "DATABOX.pem"),
 		createSecret(sla.localContainerName.toUpperCase() + '_KEY', arbiterToken, "ARBITER_TOKEN"),
 		updateArbiter({name: sla.localContainerName, key: arbiterToken, type: sla['databox-type']})
-	]);
+	]
+
+	if(sla['databox-type'] == 'store') {
+		proms.push(docker.getSecret('databox_ZMQ_SECRET_KEY').inspect().then((key) => {
+			addSecret("ZMQ_SECRET_KEY", key.Spec.Name, key.ID)
+		}));
+	} 
+
+	await Promise.all(proms);
 
 	return config
 };
