@@ -108,6 +108,9 @@ const install = async function (sla) {
 			"UpdateConfig": {
 				"Parallelism": 1
 			},
+			"EndpointSpec": {
+				"Mode": "dnsrr"
+			},
 			"Networks": []
 		};
 
@@ -135,6 +138,9 @@ const install = async function (sla) {
 		}
 
 		saveSLA(sla);
+
+		//RELAY ON config.TaskTemplate.ContainerSpec.Env to find out communication peers
+		await bridge.connectEndpoints(containerConfig, dependentStoreConfigArray);
 
 		//UPDATE SERVICES
 		let dependentStoreConfig;
