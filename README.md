@@ -4,8 +4,8 @@
 Databox container manager and dashboard user interface part of the databox platform 
 see [the main repository](https://github.com/me-box/databox) for more information. 
 
-For developing Databox core components- Databox exposes following functions:
-1. `setHttpsHelper(helper)`: this functions https agent -with Databox root cirtificate.
+For developing Databox core components- Container Manager (CM) exposes following functions:
+1. `setHttpsHelper(helper)`: this functions https agent - with Databox root cirtificate.
 2. `install(sla)`: start a app/driver service as a docker container.
 3. `uninstall(service)`: remove the running `service` docker container.
 4. `restart(container)`: restart the `container`.
@@ -15,6 +15,12 @@ For developing Databox core components- Databox exposes following functions:
 7. `updateArbiter(data)`:  this function updates arbitor endpoint:/cm/upsert-container-info using post 'data'
 8. `restoreContainers(slas)`:  this funtion restores containers by relaunching them by their sla's.
 9. `getActiveSLAs()`: this function gives all SLA's registered in the SLA - database.
+
+### CM SLA database functions
+10. `getSLA(name)`: find sla with `name` in `./slaStore/sladatastore.db`
+11. `getAllSLAs`: list all slas in `./slaStore/sladatastore.db`
+12. `putSLA(name, sla)`: put sla with `name` in `./slaStore/sladatastore.db`
+13. `deleteSLA(name)`: delete sla with `name` from `./slaStore/sladatastore.db`
 
 
 
