@@ -580,7 +580,8 @@ exports.connect = function () {
 			return;
 		}
 		resolve();
-	}));
+	}))
+		.then(() => bridge.identifyCM());
 };
 
 const listContainers = function () {
