@@ -1,3 +1,4 @@
+/*jshint esversion: 6 */
 const Config = require('./config.json');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -25,18 +26,33 @@ const DATABOX_EXPORT_SERVICE_ENDPOINT = "https://export-service:8080";
 
 //setup dev env
 const DATABOX_DEV = process.env.DATABOX_DEV;
-if (DATABOX_DEV == 1) {
-	Config.registryUrl = '';
-	Config.storeUrl = Config.storeUrl_dev;
-	console.log("Using dev registry::", Config.registryUrl);
-}
 
-const DATABOX_SDK = process.env.DATABOX_SDK;
-if (DATABOX_SDK == 1) {
-	Config.registryUrl = Config.registryUrl_sdk;
-	Config.storeUrl = Config.storeUrl_sdk;
-	console.log("Using sdk registry::", Config.registryUrl);
-}
+let getRegistryUrlFromSLA = function (sla) {
+
+	//default to the config file
+	let registryUrl = Config.registryUrl;
+
+	if (sla.storeUrl) {
+		storeUrl = url.parse(sla.storeUrl);
+		if (storeUrl.hostname == "localhost" || storeUrl.hostname == "127.0.0.1") {
+			//its a locally installed image get it from the local system
+			console.log("Using local registry");
+			registryUrl = "";
+		} else {
+			if(sla.registry) {
+				//allow overriding image location in manifest for SDK
+				registryUrl = sla.registry+"/";
+			} else {
+				//default to databox systems
+				console.log("Using databoxsystems registry");
+				registryUrl = "databoxsystems/";
+			}
+		}
+	}
+	console.log("SETTING REG TO ::", registryUrl);
+	return registryUrl;
+};
+
 
 
 let arbiterAgent; //An https agent that will not reject certs signed by the CM
@@ -239,8 +255,10 @@ const driverConfig = function (config, sla) {
 
 	let localContainerName = sla.name + ARCH;
 
+	let registryUrl = getRegistryUrlFromSLA(sla);
+
 	let driver = {
-		image: Config.registryUrl + localContainerName,
+		image: registryUrl + localContainerName,
 		Env: [
 			"DATABOX_LOCAL_NAME=" + localContainerName,
 			"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
@@ -251,7 +269,7 @@ const driverConfig = function (config, sla) {
 	if (sla['resource-requirements'] && sla['resource-requirements']['store']) {
 
 		if (sla['resource-requirements']['store'].length === 1) {
-			//TODO remove this 
+			//TODO remove this
 			let storeName = sla.name + "-" + sla['resource-requirements']['store'] + ARCH;
 			driver.Env.push("DATABOX_STORE_ENDPOINT=https://" + storeName + ":8080");
 		} else {
@@ -273,8 +291,11 @@ const driverConfig = function (config, sla) {
 
 const appConfig = function (config, sla) {
 	let localContainerName = sla.name + ARCH;
+
+	let registryUrl = getRegistryUrlFromSLA(sla);
+
 	let app = {
-		image: Config.registryUrl + localContainerName,
+		image: registryUrl + localContainerName,
 		Env: [
 			"DATABOX_LOCAL_NAME=" + localContainerName,
 			"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
@@ -300,7 +321,7 @@ const appConfig = function (config, sla) {
 
 	if (sla['resource-requirements'] && sla['resource-requirements']['store']) {
 		if (sla['resource-requirements']['store'].length === 1) {
-			//TODO remove this 
+			//TODO remove this
 			let storeName = sla.name + "-" + sla['resource-requirements']['store'] + ARCH;
 			app.Env.push("DATABOX_STORE_ENDPOINT=https://" + storeName + ":8080");
 		} else {
@@ -334,8 +355,10 @@ const storeConfig = function (configTemplate, sla) {
 		let rootContainerName = storeName;
 		let requiredName = sla.name + "-" + storeName + ARCH;
 
+		let registryUrl = getRegistryUrlFromSLA(sla);
+
 		let store = {
-			image: Config.registryUrl + rootContainerName,
+			image: registryUrl + rootContainerName,
 			volumes: [],
 			Env: [
 				"DATABOX_LOCAL_NAME=" + requiredName,
@@ -457,7 +480,7 @@ async function addPermissionsFromSla(sla) {
 		}
 	}
 
-	//Add permissions for dependent stores 
+	//Add permissions for dependent stores
 	if (sla['resource-requirements'] && sla['resource-requirements']['store']) {
 
 		for (const storeType of sla['resource-requirements']['store']) {
