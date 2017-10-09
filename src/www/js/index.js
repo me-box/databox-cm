@@ -170,6 +170,7 @@ function listApps(type) {
 			.then((json) => {
 				for (const app of json.apps) {
 					app.url = store.url + 'app/get/?name=' + app.manifest.name;
+					app.manifest.storeUrl = app.url;
 					app.store = store.name;
 					app.displayName = app.manifest.name.replace('databox', '').replace('driver-', '').replace('app-', '').split('-').join(' ').trim();
 				}
