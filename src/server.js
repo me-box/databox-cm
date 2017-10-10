@@ -1,18 +1,9 @@
 /*jshint esversion: 6 */
 
 const Config = require('./config.json');
-//setup dev env 
+//setup dev env
 const DATABOX_DEV = process.env.DATABOX_DEV === '1';
-if (DATABOX_DEV) {
-	Config.registryUrl = Config.registryUrl_dev;
-	Config.storeUrl = Config.storeUrl_dev;
-}
 
-const DATABOX_SDK = process.env.DATABOX_SDK === '1';
-if (DATABOX_SDK) {
-	Config.registryUrl = Config.registryUrl_sdk;
-	Config.storeUrl = Config.storeUrl_sdk;
-}
 
 const http = require('http');
 const https = require('https');
@@ -33,11 +24,9 @@ module.exports = {
 		const server = http.createServer(app);
 		const installingApps = {};
 
-		if (DATABOX_DEV) {
-			this.proxies.store = "http://" + Config.localAppStoreName + ":8181";
-		} else {
-			this.proxies.store = Config.storeUrl;
-		}
+		//Always proxy to the local store, app UI deals with remote stores
+		this.proxies.store = Config.storeUrl_dev;
+
 
 		app.enable('trust proxy');
 		app.set('views', 'src/www');
@@ -237,11 +226,10 @@ module.exports = {
 					}
 
 					const options = {'url': '', 'method': 'GET'};
-					if (DATABOX_DEV) {
-						options.url = "http://" + Config.localAppStoreName + ":8181" + '/app/list';
-					} else {
-						options.url = Config.storeUrl + '/app/list';
-					}
+
+					//Always use local store, app UI deals with remote stores
+					options.url = Config.storeUrl_dev + '/app/list';
+
 					return new Promise((resolve, reject) => {
 						request(options, (error, response, body) => {
 							if (error) {

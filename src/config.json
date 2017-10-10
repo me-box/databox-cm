@@ -1,6 +1,6 @@
 {
 	"registryUrl": "databoxsystems/",
-	"storeUrl": "http://app-server:8181",
+	"storeUrl": "http://store.iotdatabox.com:8181",
 	"registryUrl_dev": "",
 	"storeUrl_dev": "http://app-server:8181",
 	"registryUrl_sdk": "registry.iotdatabox.com/",
