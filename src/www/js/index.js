@@ -424,9 +424,7 @@ router.on('/:name', (params) => {
 					}
 
 					const menu = new mdc.menu.MDCSimpleMenu(document.getElementById('versionMenu'));
-					console.log(menu);
 					document.getElementById('versionButton').addEventListener('click', function () {
-						console.log(menu);
 						menu.open = !menu.open
 					});
 
