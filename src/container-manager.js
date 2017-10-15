@@ -176,6 +176,7 @@ const install = async function (sla) {
 exports.install = install;
 
 const uninstall = async function (name) {
+	let networkConfig = await bridge.networkOfService(name);
 	return docker.getService(name).remove()
 		.then(() => docker.listSecrets({filters: {'label': ['databox.service.name=' + name]}}))
 		.then((secrets) => {
@@ -186,6 +187,7 @@ const uninstall = async function (name) {
 
 			return Promise.all(proms)
 		})
+		.then(() => bridge.postUninstall(name, networkConfig))
 		.then(() => db.deleteSLA(name, false));
 };
 exports.uninstall = uninstall;
