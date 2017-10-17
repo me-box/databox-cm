@@ -124,8 +124,8 @@ module.exports = function(docker) {
 
                 if (containers.length === 0) {
                     return Promise.resolve(docker.getNetwork(config.Network))
-                        .then((net) => net.disconnect({"Container": DATABOX_BRIDGE}))
-                        .then((net) => removeNetwork(net, config.Network))
+                        //.then((net) => net.disconnect({"Container": DATABOX_BRIDGE}))
+                        //.then((net) => removeNetwork(net, config.Network))
                         .then(() => console.log("network ", config.Network, " removed"))
                         .catch((err) => console.log(err));
                 } else {
