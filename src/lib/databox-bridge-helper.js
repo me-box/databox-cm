@@ -3,10 +3,10 @@ const url          = require('url');
 const fs           = require('fs');
 const promiseRetry = require('promise-retry');
 
-const DATABOX_BRIDGE          = "bridge";
-const DATABOX_BRIDGE_ENDPOINT = "http://bridge:8080";
+let DATABOX_BRIDGE;
+let DATABOX_BRIDGE_ENDPOINT;
 
-const CM_KEY = fs.readFileSync("/run/secrets/CM_KEY", {encoding: 'base64'});
+const CM_KEY = fs.readFileSync("/run/secrets/DATABOX_BRIDGE_KEY", {encoding: 'base64'});
 
 module.exports = function(docker) {
     let module = {};
@@ -79,6 +79,25 @@ module.exports = function(docker) {
                 const cm = containers[0];
                 let cmIP = cm.NetworkSettings.Networks["databox-system-net"].IPAddress;
                 return addPrivileged(cmIP);
+            });
+    };
+
+    const identifySelf = async function() {
+        let opt = {filters: {"name": ["bridge"]}};
+        return docker.listContainers(opt)
+            .then(containers => {
+                if (containers.length === 0) {
+                    console.log("ERR: no bridge found");
+                    return;
+                }
+
+                DATABOX_BRIDGE = containers[0].Names[0].substring(1);
+                DATABOX_BRIDGE_ENDPOINT = "http://" + containers[0].Names[0].substring(1) + ":8080"
+
+                console.log("set DATABOX_BRIDGE to ",          DATABOX_BRIDGE);
+                console.log("set DATABOX_BRIDGE_ENDPOINT to ", DATABOX_BRIDGE_ENDPOINT);
+                return;
+
             });
     };
 
@@ -319,6 +338,7 @@ module.exports = function(docker) {
     module.preConfig        = preConfig;
     module.connectEndpoints = connectEndpoints;
     module.identifyCM       = identifyCM;
+    module.identifySelf     = identifySelf;
     module.networkOfService = networkOfService;
     module.postUninstall    = postUninstall;
     return module;

@@ -577,12 +577,13 @@ async function addPermissionsFromSla(sla) {
 
 exports.connect = function () {
 	return new Promise((resolve, reject) => docker.ping(function (err, data) {
-		if (err) {
-			reject("Cant connect to docker!");
-			return;
-		}
-		resolve();
-	}))
+			if (err) {
+				reject("Cant connect to docker!");
+				return;
+			}
+			resolve();
+		}))
+		.then(() => bridge.identifySelf())
 		.then(() => bridge.identifyCM());
 };
 
