@@ -131,7 +131,8 @@ module.exports = function(docker) {
     };
 
     const postUninstall = async function(service, config) {
-        return docker.getNetwork(config.Network).inspect()
+        return disconnectFor(service, config.IP)
+            .then(() => docker.getNetwork(config.Network).inspect())
             .then((data) => {
                 let containers = [];
                 for (let contId in data.Containers) {
@@ -143,8 +144,8 @@ module.exports = function(docker) {
 
                 if (containers.length === 0) {
                     return Promise.resolve(docker.getNetwork(config.Network))
-                        //.then((net) => net.disconnect({"Container": DATABOX_BRIDGE}))
-                        //.then((net) => removeNetwork(net, config.Network))
+                        .then((net) => net.disconnect({"Container": DATABOX_BRIDGE}))
+                        .then((net) => removeNetwork(net))
                         .then(() => console.log("network ", config.Network, " removed"))
                         .catch((err) => console.log(err));
                 } else {
@@ -154,7 +155,6 @@ module.exports = function(docker) {
                     return;
                 }
             })
-            .then(() => disconnectFor(service, config.IP))
             .catch(err => console.log("[Bridge] postUninstall error ", err));
 
     };
@@ -306,7 +306,8 @@ module.exports = function(docker) {
                 options,
                 function(err, res, body) {
                     if (err || (res.statusCode < 200 || res.statusCode >= 300)) {
-                        retry(err || new Error(body || "[addPrivileged] error: " + res.statusCode));
+                        console.log(err || new Error(body || "[addPrivileged] error: " + res.statusCode));
+                        retry()
                     } else {
                         console.log("[addPrivileged] DONE");
                     }
