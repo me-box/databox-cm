@@ -10,7 +10,7 @@ const Docker = require('dockerode');
 const docker = new Docker();
 const db = require('./include/container-manager-db.js');
 
-const bridge = require('./lib/databox-bridge-helper.js')(docker);
+const databoxNet = require('./lib/databox-network-helper.js')(docker);
 
 //ARCH to append -arm to the end of a container name if running on arm
 //swarm mode dose not use this for now
@@ -118,7 +118,7 @@ const install = async function (sla) {
 		let dependentStoreConfigTemplate = JSON.parse(JSON.stringify(containerConfig));
 		let dependentStoreConfigArray;
 
-		let networkConfig = await bridge.preConfig(sla);
+		let networkConfig = await databoxNet.preConfig(sla);
 		console.log("preconfig: ", networkConfig);
 
 		switch (sla['databox-type']) {
@@ -140,7 +140,7 @@ const install = async function (sla) {
 		saveSLA(sla);
 
 		//RELAY ON config.TaskTemplate.ContainerSpec.Env to find out communication peers
-		await bridge.connectEndpoints(containerConfig, dependentStoreConfigArray);
+		await databoxNet.connectEndpoints(containerConfig, dependentStoreConfigArray);
 
 		//UPDATE SERVICES
 		let dependentStoreConfig;
@@ -176,7 +176,7 @@ const install = async function (sla) {
 exports.install = install;
 
 const uninstall = async function (name) {
-	let networkConfig = await bridge.networkOfService(name);
+	let networkConfig = await databoxNet.networkOfService(name);
 	return docker.getService(name).remove()
 		.then(() => docker.listSecrets({filters: {'label': ['databox.service.name=' + name]}}))
 		.then((secrets) => {
@@ -187,7 +187,7 @@ const uninstall = async function (name) {
 
 			return Promise.all(proms)
 		})
-		.then(() => bridge.postUninstall(name, networkConfig))
+		.then(() => databoxNet.postUninstall(name, networkConfig))
 		.then(() => db.deleteSLA(name, false));
 };
 exports.uninstall = uninstall;
@@ -583,8 +583,8 @@ exports.connect = function () {
 			}
 			resolve();
 		}))
-		.then(() => bridge.identifySelf())
-		.then(() => bridge.identifyCM());
+		.then(() => databoxNet.identifySelf())
+		.then(() => databoxNet.identifyCM());
 };
 
 const listContainers = function () {

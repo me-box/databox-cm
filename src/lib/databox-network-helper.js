@@ -3,26 +3,26 @@ const url          = require('url');
 const fs           = require('fs');
 const promiseRetry = require('promise-retry');
 
-let DATABOX_BRIDGE;
-let DATABOX_BRIDGE_ENDPOINT;
+let DATABOX_NETWORK;
+let DATABOX_NETWORK_ENDPOINT;
 
-const CM_KEY = fs.readFileSync("/run/secrets/DATABOX_BRIDGE_KEY", {encoding: 'base64'});
+const CM_KEY = fs.readFileSync("/run/secrets/DATABOX_NETWORK_KEY", {encoding: 'base64'});
 
 module.exports = function(docker) {
     let module = {};
 
-    /* create a network, get bridge's IP on that network, to serve as DNS resolver */
+    /* create a network, get core-network's IP on that network, to serve as DNS resolver */
     const preConfig = async function(sla) {
-        let networkName = sla.localContainerName + "-bridge";
+        let networkName = sla.localContainerName + "-network";
         let net = await getNetwork(networkName);
 
         return new promiseRetry((retry, number) => {
-            /* in case network is existed, inspect first, if no bridge spotted then connect */
+            /* in case network is existed, inspect first, if no network spotted then connect */
             return net.inspect()
                 .then((data) => {
                     let ipOnNet;
                     for(var contId in data.Containers) {
-                        if (data.Containers[contId].Name === DATABOX_BRIDGE) {
+                        if (data.Containers[contId].Name === DATABOX_NETWORK) {
                             var cidr = data.Containers[contId].IPv4Address;
                             ipOnNet = cidr.split('/')[0];
                             break;
@@ -31,9 +31,9 @@ module.exports = function(docker) {
 
                     if (ipOnNet === undefined) {
                         /* newly created network, connect then retry */
-                        return net.connect({"Container": DATABOX_BRIDGE})
+                        return net.connect({"Container": DATABOX_NETWORK})
                             .then(() => {
-                                console.log(DATABOX_BRIDGE + " connected on " + networkName);
+                                console.log(DATABOX_NETWORK + " connected on " + networkName);
                                 retry();
                             })
                             .catch(err => retry(err));
@@ -68,7 +68,7 @@ module.exports = function(docker) {
         return docker.listContainers(opt)
             .then(containers => {
                 if (containers.length == 0) {
-                    console.log("WARN: no CM found for bridge");
+                    console.log("WARN: no CM found for core-network");
                     return;
                 }
 
@@ -83,19 +83,18 @@ module.exports = function(docker) {
     };
 
     const identifySelf = async function() {
-        let opt = {filters: {"name": ["bridge"]}};
+        let opt = {filters: {"name": ["databox-network"]}};
         return docker.listContainers(opt)
             .then(containers => {
                 if (containers.length === 0) {
-                    console.log("ERR: no bridge found");
+                    console.log("ERR: no databox-network found");
                     return;
                 }
 
-                DATABOX_BRIDGE = containers[0].Names[0].substring(1);
-                DATABOX_BRIDGE_ENDPOINT = "http://" + containers[0].Names[0].substring(1) + ":8080"
+                DATABOX_NETWORK = containers[0].Names[0].substring(1);
+                DATABOX_NETWORK_ENDPOINT = "http://" + containers[0].NetworkSettings.Networks["databox-system-net"]["IPAddress"] + ":8080"
 
-                console.log("set DATABOX_BRIDGE to ",          DATABOX_BRIDGE);
-                console.log("set DATABOX_BRIDGE_ENDPOINT to ", DATABOX_BRIDGE_ENDPOINT);
+                console.log("set DATABOX_NETWORK_ENDPOINT to ", DATABOX_NETWORK_ENDPOINT);
                 return;
 
             });
@@ -137,14 +136,14 @@ module.exports = function(docker) {
                 let containers = [];
                 for (let contId in data.Containers) {
                     let sname = toServiceName(data.Containers[contId].Name);
-                    if (sname !== service && sname !== DATABOX_BRIDGE) {
+                    if (sname !== service && sname !== DATABOX_NETWORK) {
                         containers.push(data.Containers[contId].Name);
                     }
                 }
 
                 if (containers.length === 0) {
                     return Promise.resolve(docker.getNetwork(config.Network))
-                        .then((net) => net.disconnect({"Container": DATABOX_BRIDGE}))
+                        .then((net) => net.disconnect({"Container": DATABOX_NETWORK}))
                         .then((net) => removeNetwork(net))
                         .then(() => console.log("network ", config.Network, " removed"))
                         .catch((err) => console.log(err));
@@ -155,7 +154,7 @@ module.exports = function(docker) {
                     return;
                 }
             })
-            .catch(err => console.log("[Bridge] postUninstall error ", err));
+            .catch(err => console.log("[core-network] postUninstall error ", err));
 
     };
 
@@ -237,7 +236,7 @@ module.exports = function(docker) {
             };
 
             const options = {
-                url: DATABOX_BRIDGE_ENDPOINT + "/connect",
+                url: DATABOX_NETWORK_ENDPOINT + "/connect",
                 method: 'POST',
                 body: data,
                 json: true,
@@ -266,7 +265,7 @@ module.exports = function(docker) {
             };
 
             const options = {
-                url: DATABOX_BRIDGE_ENDPOINT + "/disconnect",
+                url: DATABOX_NETWORK_ENDPOINT + "/disconnect",
                 method: 'POST',
                 body: data,
                 json: true,
@@ -294,7 +293,7 @@ module.exports = function(docker) {
             };
 
             const options = {
-                url: DATABOX_BRIDGE_ENDPOINT + "/privileged",
+                url: DATABOX_NETWORK_ENDPOINT + "/privileged",
                 method: 'POST',
                 body: data,
                 json: true,
@@ -306,7 +305,6 @@ module.exports = function(docker) {
                 options,
                 function(err, res, body) {
                     if (err || (res.statusCode < 200 || res.statusCode >= 300)) {
-                        console.log(err || new Error(body || "[addPrivileged] error: " + res.statusCode));
                         retry()
                     } else {
                         console.log("[addPrivileged] DONE");
