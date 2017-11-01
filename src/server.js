@@ -54,22 +54,30 @@ module.exports = {
 				}
 
 				console.log("[Proxy] " + req.method + ": " + req.url + " => " + proxyURL);
-				databoxRequestPromise({uri: proxyURL})
-					.then((resolvedRequest) => {
+				let retried = false;
+				let retryOnce = function () {
+					databoxRequestPromise({uri: proxyURL})
+						.then((resolvedRequest) => {
 
-						return req.pipe(resolvedRequest)
-							.on('error', (e) => {
-								console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
-							})
-							.pipe(res)
-							.on('error', (e) => {
-								console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
-							})
-							.on('end', () => {
-								next();
-							});
-					});
-
+							return req.pipe(resolvedRequest)
+								.on('error', (e) => {
+									console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
+									if (!retried && e.message.includes("getaddrinfo ENOTFOUND")) {
+										retried = true;
+										console.log('[Proxy] retry ' + req.url);
+										retryOnce();
+									}
+								})
+								.pipe(res)
+								.on('error', (e) => {
+									console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
+								})
+								.on('end', () => {
+									next();
+								});
+						});
+				};
+				retryOnce();
 			} else {
 				next();
 			}
