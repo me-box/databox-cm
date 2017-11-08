@@ -359,7 +359,6 @@ const storeConfig = function (configTemplate, sla) {
 
 		let store = {
 			image: registryUrl + rootContainerName,
-			volumes: [],
 			Env: [
 				"DATABOX_LOCAL_NAME=" + requiredName,
 				"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
@@ -370,11 +369,8 @@ const storeConfig = function (configTemplate, sla) {
 		config.Networks.push({Target: 'databox_databox-driver-net'});
 		config.Networks.push({Target: 'databox_databox-app-net'});
 
-		if ('volumes' in sla) {
-			for (let vol of sla.volumes) {
-				store.volumes("/tmp/" + requiredName + "-" + vol.replace('/', '') + ":" + vol);
-			}
-		}
+		let vol = "/database"
+		store.Mounts = [{Source:requiredName, Target: vol, type:"volume"}]
 
 		config.Name = requiredName;
 		config.TaskTemplate.ContainerSpec = store;
