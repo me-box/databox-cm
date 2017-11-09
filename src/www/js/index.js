@@ -2,6 +2,7 @@ const router = new Navigo(null, true, '#!');
 
 let stores = [];
 
+const localStoreName = "Local Store";
 const sensorDriver = 'driver-sensingkit';
 const isApp = typeof cordova !== 'undefined';
 let databoxURL = 'http://localhost:8989/';
@@ -9,6 +10,64 @@ if (!isApp) {
 	const url = new URL(window.location);
 	databoxURL = url.protocol + '//' + url.hostname + ':8989' + '/';
 	document.getElementById('sensing').style.display = 'none';
+}
+
+function isPositiveInteger(x) {
+	// http://stackoverflow.com/a/1019526/11236
+	return /^\d+$/.test(x);
+}
+
+function compareManifests(m1, m2) {
+	const v1parts = m1.manifest.version.split('.');
+	const v2parts = m2.manifest.version.split('.');
+
+	// First, validate both numbers are true version numbers
+	function validateParts(parts) {
+		for (let i = 0; i < parts.length; ++i) {
+			if (!isPositiveInteger(parts[i])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	if (!validateParts(v1parts) || !validateParts(v2parts)) {
+		return NaN;
+	}
+
+	for (let i = 0; i < v1parts.length; ++i) {
+		if (v2parts.length === i) {
+			return -1;
+		}
+
+		if (v1parts[i] === v2parts[i]) {
+			continue;
+		}
+		if (v1parts[i] > v2parts[i]) {
+			return -1;
+		}
+		return 1;
+	}
+
+	if (v1parts.length !== v2parts.length) {
+		return 1;
+	}
+
+	if (m1.store === localStoreName) {
+		return -1;
+	} else if (m2.store === localStoreName) {
+		return 1;
+	}
+
+	return 0;
+}
+
+function bestManifest(app) {
+	if (!app || app.length === 0) {
+		return null;
+	}
+	app.sort(compareManifests);
+	return app[0].manifest;
 }
 
 function checkOk(res) {
@@ -103,13 +162,13 @@ function connect(retry) {
 
 				url.port = '8181';
 				stores = [{
-					"name": "Local Store",
+					"name": localStoreName,
 					"url": url.toString()
 				},
-				{
-					"name": "IoT Databox Store",
-					"url": "https://store.iotdatabox.com/"
-				}];
+					{
+						"name": "IoT Databox Store",
+						"url": "https://store.iotdatabox.com/"
+					}];
 
 				if (router.lastRouteResolved() !== null && router.lastRouteResolved().url === '/connect') {
 					router.navigate('/');
@@ -118,6 +177,8 @@ function connect(retry) {
 				} else {
 					router.resolve();
 				}
+
+				restartSensors();
 			}
 		})
 		.catch((error) => {
@@ -170,9 +231,15 @@ function listApps(type) {
 			.then((json) => {
 				for (const app of json.apps) {
 					app.url = store.url + 'app/get/?name=' + app.manifest.name;
-					app.manifest.storeUrl = app.url;
+
 					app.store = store.name;
 					app.displayName = app.manifest.name.replace('databox', '').replace('driver-', '').replace('app-', '').split('-').join(' ').trim();
+					app.manifest.displayName = app.displayName;
+					if (store.name === localStoreName) {
+						app.manifest.storeUrl = 'http://localhost:8181/app/get/?name=' + app.manifest.name;
+					} else {
+						app.manifest.storeUrl = app.url;
+					}
 				}
 				return json;
 			})
@@ -204,9 +271,10 @@ function listApps(type) {
 			.then((apps) => {
 				let filtered = {};
 				for (const name in apps) {
-					let app = apps[name];
-					if (app[0].manifest['databox-type'] === appType) {
-						filtered[app[0].manifest.name] = app;
+					const app = apps[name];
+					const manifest = bestManifest(app);
+					if (manifest['databox-type'] === appType) {
+						filtered[manifest.name] = app;
 					}
 				}
 				return filtered;
@@ -276,63 +344,89 @@ function showConnect(error) {
 
 function showSensingInstall() {
 	console.log("Show Sensing Install");
-	document.getElementById('content').innerHTML = alertTemplate({
-		icon: 'network_check',
-		button: 'Enable Mobile Sensor Data'
-	});
-	document.getElementById('alert_button').addEventListener('click', () => {
-		showSpinner();
-		listApps('driver')
-			.then((apps) => {
-				const osApp = apps[sensorDriver];
-				const manifest = osApp[0].manifest;
-				if (osApp) {
-					fetch(databoxURL + "api/install", {
-						headers: {
-							'Content-Type': 'application/json'
-						},
-						method: "POST",
-						body: JSON.stringify(manifest),
-					})
-						.then(checkOk)
-						.then((res) => {
-							showSensingStart();
-						});
+	showSpinner();
+	listApps('driver')
+		.then((apps) => {
+			const osApp = apps[sensorDriver];
+			if (osApp) {
+				const manifest = bestManifest(osApp);
+				if (manifest) {
+					console.log(JSON.stringify(manifest));
+					document.getElementById('content').innerHTML = alertTemplate({
+						icon: 'network_check',
+						button: 'Enable Mobile Sensor Data'
+					});
+					document.getElementById('alert_button').addEventListener('click', () => {
+						showSpinner();
+						fetch(databoxURL + "api/install", {
+							headers: {
+								'Content-Type': 'application/json'
+							},
+							method: "POST",
+							body: JSON.stringify(manifest),
+						})
+							.then(checkOk)
+							.then((res) => {
+								showSensingStart();
+							});
+					});
+				} else {
+					document.getElementById('content').innerHTML = alertTemplate({
+						icon: 'warning',
+						title: 'SensingKit Driver not Found'
+					});
 				}
-			});
-	});
+			} else {
+				document.getElementById('content').innerHTML = alertTemplate({
+					icon: 'warning',
+					title: 'SensingKit Driver not Found'
+				});
+			}
+		});
 }
 
 function showSensingStart() {
-	console.log("Show Sensing Install");
-	SensingKit.isRunning((result) => {
-		console.log(result);
-		if (result === 'true') {
-			showSpinner();
-			SensingKit.start(databoxURL + sensorDriver, (error) => {
-				console.log(error);
-				const url = databoxURL + sensorDriver + '/ui';
-				const iframe = document.createElement("iframe");
-				iframe.setAttribute("src", url);
+	fetch(databoxURL + sensorDriver + '/ui')
+		.then(checkOk)
+		.then(() => {
+			showSensors();
+		})
+		.catch(() => {
+			showSensingStart();
+		});
+}
 
-				const content = document.getElementById('content');
-
-				iframe.style.height = (document.documentElement.clientHeight - 56) + 'px';
-				content.innerHTML = '';
-				content.appendChild(iframe);
-			});
+function showSensors() {
+	SensingKit.listSensors((result) => {
+		let enabled_sensors = localStorage.getItem('sensors');
+		if (!enabled_sensors) {
+			enabled_sensors = [];
+		} else {
+			enabled_sensors = JSON.parse(enabled_sensors);
 		}
-		else {
-			document.getElementById('content').innerHTML = alertTemplate({
-				icon: 'network_check',
-				button: 'Start Recording Mobile Sensor Data'
-			});
-			document.getElementById('alert_button').addEventListener('click', () => {
-				SensingKit.start(databoxURL + sensorDriver, (error) => {
-					console.log(error);
-					showSensingStart();
-				});
-			});
+		result.sort();
+		document.getElementById('content').innerHTML = sensorListTemplate({
+			sensors: result,
+			enabled_sensors: enabled_sensors
+		});
+		const sensorCheckboxes = document.getElementsByClassName('mdc-checkbox__native-control');
+		for (const checkbox of sensorCheckboxes) {
+			checkbox.addEventListener('change', (event) => {
+				let selected = [];
+				for (const checkbox of sensorCheckboxes) {
+					let name = checkbox.id.substring(0, checkbox.id.length - 9);
+					if (checkbox.checked) {
+						selected.push(name);
+					}
+				}
+				if (selected.length === 4) {
+					event.target.checked = false;
+				} else {
+					SensingKit.startSensors(selected, databoxURL + sensorDriver, () => {
+					});
+				}
+				//showSensors();
+			})
 		}
 	});
 }
@@ -401,25 +495,26 @@ router.on('/:name', (params) => {
 				.then((json) => {
 					toolbarBack();
 					const app = apps[params.name];
-					app.installed = json.indexOf(app[0].manifest.name) !== -1;
+					const manifest = bestManifest(app);
+					app.installed = json.indexOf(manifest.name) !== -1;
 					document.getElementById('content').innerHTML = appTemplate({
 						app: app
 					});
 
-					const installURL = "#!/" + app[0].manifest.name + "/config/";
+					const installURL = "#!/" + manifest.name + "/config/";
 					const menuItems = document.getElementsByClassName('version-item');
-					for(const menuItem of menuItems) {
+					for (const menuItem of menuItems) {
 						menuItem.addEventListener('click', function (event) {
 							document.getElementById('install_link').href = installURL + event.target.id;
 							const menuItems = document.getElementsByClassName('version-item');
-							for(const menuItem of menuItems) {
+							for (const menuItem of menuItems) {
 								menuItem.classList.remove('mdc-simple-menu--selected');
 							}
 							event.target.classList.add('mdc-simple-menu--selected');
 						})
 					}
 
-					if(menuItems.length > 0) {
+					if (menuItems.length > 0) {
 						menuItems.item(0).classList.add('mdc-simple-menu--selected');
 					}
 
@@ -441,9 +536,12 @@ router.on('/:name', (params) => {
 
 router.on('/:name/ui', (params) => {
 	showSpinner();
+	let appname = params.name;
+	if(isApp && appname === sensorDriver) {
+		router.navigate('/sensing');
+	}
 
 	document.getElementById('toolbartitle').innerText = params.name;
-	let appname = params.name;
 	if (appname === 'databox_arbiter') {
 		appname = 'arbiter';
 	}
@@ -462,7 +560,37 @@ router.on('/:name/ui', (params) => {
 toolbarDisabled();
 window.onload = function () {
 	connect();
+	document.addEventListener("deviceready", onDeviceReady, false);
 };
+
+// device APIs are available
+//
+function onDeviceReady() {
+	document.addEventListener("pause", onPause, false);
+	document.addEventListener("resume", restartSensors, false);
+	// Add similar listeners for other events
+}
+
+function onPause() {
+	SensingKit.stop();
+}
+
+function restartSensors() {
+	if (isApp) {
+		fetch(databoxURL + sensorDriver + '/ui')
+			.then(checkOk)
+			.then(() => {
+				let enabled_sensors = localStorage.getItem('sensors');
+				if (enabled_sensors) {
+					enabled_sensors = JSON.parse(enabled_sensors);
+					SensingKit.startSensors(enabled_sensors, databoxURL + sensorDriver, () => {
+
+					});
+				}
+
+			});
+	}
+}
 
 let searchTimer;
 const drawer = new mdc.drawer.MDCTemporaryDrawer(document.querySelector('.mdc-temporary-drawer'));
