@@ -39,9 +39,9 @@ let getRegistryUrlFromSLA = function (sla) {
 			console.log("Using local registry");
 			registryUrl = "";
 		} else {
-			if(sla.registry) {
+			if (sla.registry) {
 				//allow overriding image location in manifest for SDK
-				registryUrl = sla.registry+"/";
+				registryUrl = sla.registry + "/";
 			} else {
 				//default to databox systems
 				console.log("Using databoxsystems registry");
@@ -87,6 +87,7 @@ const install = async function (sla) {
 		//let config = loadGlobalDockerConfig();
 		let containerConfig = {
 			"Name": "",
+			"Labels": {},
 			"TaskTemplate": {
 				"ContainerSpec": {
 					"Image": ""
@@ -159,7 +160,7 @@ const install = async function (sla) {
 				reject("Error adding permissions" + err);
 			});
 
-		resolve([containerConfig.Name,containerConfig.Name || "NO STORE"]);
+		resolve([containerConfig.Name, containerConfig.Name || "NO STORE"]);
 	});
 };
 exports.install = install;
@@ -283,6 +284,7 @@ const driverConfig = function (config, sla) {
 
 	config.Networks.push({Target: 'databox_databox-driver-net'});
 	config.Name = localContainerName;
+	config.Labels['databox.type'] = 'driver';
 	config.TaskTemplate.ContainerSpec = driver;
 	config.TaskTemplate.Placement.constraints = ["node.role == manager"];
 
@@ -336,6 +338,7 @@ const appConfig = function (config, sla) {
 	config.Name = localContainerName;
 	config.TaskTemplate.ContainerSpec = app;
 	config.TaskTemplate.Placement.constraints = ["node.role == manager"];
+	config.Labels['databox.type'] = 'app';
 	return config;
 };
 
@@ -369,10 +372,11 @@ const storeConfig = function (configTemplate, sla) {
 		config.Networks.push({Target: 'databox_databox-driver-net'});
 		config.Networks.push({Target: 'databox_databox-app-net'});
 
-		let vol = "/database"
-		store.Mounts = [{Source:requiredName, Target: vol, type:"volume"}]
+		let vol = "/database";
+		store.Mounts = [{Source: requiredName, Target: vol, type: "volume"}];
 
 		config.Name = requiredName;
+		config.Labels['databox.type'] = 'store';
 		config.TaskTemplate.ContainerSpec = store;
 		config.TaskTemplate.Placement.constraints = ["node.role == manager"];
 
@@ -399,8 +403,8 @@ async function addPermissionsFromSla(sla) {
 
 		console.log("[Adding Export permissions for " + localContainerName + "] on " + urlsString);
 
-	        let targetName = url.parse(DATABOX_EXPORT_SERVICE_ENDPOINT).hostname;
-	        proms.push(updateContainerPermissions({
+		let targetName = url.parse(DATABOX_EXPORT_SERVICE_ENDPOINT).hostname;
+		proms.push(updateContainerPermissions({
 			name: localContainerName,
 			route: {target: targetName, path: '/export/', method: 'POST'},
 			caveats: ["destination = [" + urlsString + "]"]
@@ -418,7 +422,7 @@ async function addPermissionsFromSla(sla) {
 			if (allowedDatasource.hypercat) {
 
 				let datasourceEndpoint = url.parse(allowedDatasource.hypercat['href']);
-				let datasourceName = datasourceEndpoint.path.replace('/','');
+				let datasourceName = datasourceEndpoint.path.replace('/', '');
 
 				const isActuator = allowedDatasource.hypercat['item-metadata'].findIndex((itm) => {
 					return (itm.rel === 'urn:X-databox:rels:isActuator') && (itm.val === true);
@@ -556,10 +560,20 @@ exports.connect = function () {
 	}));
 };
 
-const listContainers = function () {
+exports.listServices = function (type) {
+	if (type) {
+		return docker.listServices({all: true, filters: {"label": ["databox.type=" + type]}});
+	}
+	return docker.listServices({all: true, filters: {"label": ["databox.type"]}});
+};
+
+exports.listTasks = function (service) {
+	return docker.listTasks({all: true, filters: {"service": [service]}});
+};
+
+exports.listContainers = function () {
 	return docker.listContainers({all: true, filters: {"label": ["databox.type"]}});
 };
-exports.listContainers = listContainers;
 
 const repoTagToName = function (repoTag) {
 	return repoTag.match(/(?:.*\/)?([^/:\s]+)(?::.*|$)/)[1];

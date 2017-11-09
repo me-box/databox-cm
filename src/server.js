@@ -19,7 +19,7 @@ const app = express();
 module.exports = {
 	proxies: {},
 	app: app,
-	launch: function (port, conman, httpsHelper) {
+	launch: (port, conman, httpsHelper) => {
 
 		const server = http.createServer(app);
 		const installingApps = {};
@@ -137,7 +137,7 @@ module.exports = {
 										res.header('Access-Control-Allow-Credentials', true);
 										res.json(datasources);
 									})
-									.catch(function (error) {
+									.catch((error) => {
 										console.log(error);
 										res.header('Access-Control-Allow-Origin', '*');
 										res.header('Access-Control-Allow-Credentials', true);
@@ -149,120 +149,62 @@ module.exports = {
 		});
 
 		app.get('/api/installed/list', (req, res) => {
-			conman.listContainers()
-				.then((containers) => {
+			conman.listServices()
+				.then((services) => {
+					console.log(services);
 					let results = [];
-					for (const container of containers) {
-						const name = container.Labels['com.docker.swarm.service.name'];
-						if (results.indexOf(name) === -1) {
-							results.push(name);
-						}
+					for (const service of services) {
+						const name = service.Spec.Name;
+						results.push(name);
 					}
 
 					res.header('Access-Control-Allow-Origin', '*');
 					res.header('Access-Control-Allow-Credentials', true);
+					console.log(results);
 					res.json(results);
+				})
+				.catch((error) => {
+					console.log(error);
+					res.header('Access-Control-Allow-Origin', '*');
+					res.header('Access-Control-Allow-Credentials', true);
+					res.json(error);
 				});
-
 		});
 
 		app.get('/api/:type/list', (req, res) => {
-			conman.listContainers()
-				.then((containers) => {
-					let results = {};
-					for (const container of containers) {
-						if (req.params.type === 'all'
-							|| container.Labels['databox.type'] === req.params.type
-							|| (req.params.type === 'system'
-								&& container.Labels['databox.type'] !== 'app'
-								&& container.Labels['databox.type'] !== 'driver'
-								&& container.Labels['databox.type'] !== 'store')) {
-							const name = container.Labels['com.docker.swarm.service.name'];
-							if (results.hasOwnProperty(name)) {
-								const existing = results[name];
-								if (existing.Created < container.Created) {
-									results[name] = container;
+			conman.listServices(req.params.type)
+				.then((services) => {
+					let proms = [];
+					for (const service of services) {
+						const name = service.Spec.Name;
+						proms.push(conman.listTasks(name)
+							.then((tasks) => {
+								let result = {
+									name: name,
+									type: service.Spec.Labels['databox.type'],
+								};
+								if (tasks.length > 0) {
+									result.desiredState = tasks[0].DesiredState;
+									result.state = tasks[0].Status.State;
+									result.status = tasks[0].Status.Message;
 								}
-							}
-							else {
-								results[name] = container;
-							}
-
-						}
+								return result;
+							}));
 					}
 
+					return Promise.all(proms);
+				})
+				.then((tasks) => {
 					res.header('Access-Control-Allow-Origin', '*');
 					res.header('Access-Control-Allow-Credentials', true);
-					res.json(Object.keys(results).map(key => results[key]));
-				});
-		});
-
-		app.get('/list-apps', (req, res) => {
-			let names = [];
-			let result = [];
-
-			conman.listContainers()
-				.then((containers) => {
-					for (let container of containers) {
-						let name = container.Names[0].substr(1).split('.')[0];
-						names.push(name);
-						result.push({
-							name: name,
-							container_id: container.Id,
-							type: container.Labels['databox.type'] === undefined ? 'app' : container.Labels['databox.type'],
-							status: container.State
-						});
-					}
-
-					for (let installingApp in installingApps) {
-						if (names.indexOf(installingApp) === -1) {
-							names.push(installingApp);
-							result.push({
-								name: installingApp,
-								type: installingApps[installingApp],
-								status: 'installing'
-							});
-						}
-					}
-
-					const options = {'url': '', 'method': 'GET'};
-
-					//Always use local store, app UI deals with remote stores
-					options.url = Config.storeUrl_dev + '/app/list';
-
-					return new Promise((resolve, reject) => {
-						request(options, (error, response, body) => {
-							if (error) {
-								console.log("Error: " + options.url);
-								reject(error);
-								return;
-							}
-
-							resolve(JSON.parse(body).apps);
-						});
-
-					});
+					res.json(tasks);
 				})
-				.then((apps) => {
-					for (let app of apps) {
-						if (names.indexOf(app.manifest.name) === -1) {
-							names.push(app.manifest.name);
-							result.push({
-								name: app.manifest.name,
-								type: app.manifest['databox-type'] === undefined ? 'app' : app.manifest['databox-type'],
-								status: 'uninstalled',
-								author: app.manifest.author
-							});
-						}
-					}
-
-					res.json(result);
-				})
-				.catch((err) => {
-					console.log("[Error] ", err);
-					res.json(err);
+				.catch((error) => {
+					console.log(error);
+					res.header('Access-Control-Allow-Origin', '*');
+					res.header('Access-Control-Allow-Credentials', true);
+					res.json(error);
 				});
-
 		});
 
 		app.options('/api/install', (req, res) => {
