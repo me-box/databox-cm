@@ -55,10 +55,17 @@ exports.setHttpsHelper = function (helper) {
 // pub key goes to apps
 // privet key is shared with stores
 //
+// TODO: All instances of core-store share keys this is not ideal!
 const zmq = require('zeromq')
 const zmq_keys = zmq.zmqCurveKeypair();
-console.log("zmq_keys:: ",zmq_keys)
 
+//write the /run/secrets/ZMQ_PUBLIC_KEY for uses in the CM
+if (!fs.existsSync('/run/secrets/')) fs.mkdirSync('/run/secrets/');
+try {
+fs.writeFileSync('/run/secrets/ZMQ_PUBLIC_KEY',Buffer.from(zmq_keys.public));
+} catch (err) {
+	console.log("Error witting ZMQ_PUBLIC_KEY:", err);
+}
 docker.createSecret({
 	"Name": "databox_ZMQ_PUBLIC_KEY",
 	"Data": Buffer.from(zmq_keys.public).toString('base64')
@@ -213,7 +220,7 @@ function removeSecret(name) {
 }
 
 const createSecrets = async function (config, sla) {
-	
+
 	function addSecret(filename, name, id) {
 		config.TaskTemplate.ContainerSpec.secrets.push({
 			"SecretName": name, "SecretID": id, "File": {
@@ -268,7 +275,7 @@ const createSecrets = async function (config, sla) {
 		proms.push(docker.getSecret('databox_ZMQ_SECRET_KEY').inspect().then((key) => {
 			addSecret("ZMQ_SECRET_KEY", key.Spec.Name, key.ID)
 		}));
-	} 
+	}
 
 	await Promise.all(proms);
 
@@ -300,7 +307,11 @@ const driverConfig = function (config, sla) {
 		} else {
 			for (storeType of sla['resource-requirements']['store']) {
 				let storeName = sla.name + "-" + storeType + ARCH;
-				driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=https://" + storeName + ":8080");
+				if(storeType == 'core-store') {
+					driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=tcp://" + storeName + ":5555");
+				} else {
+					driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=https://" + storeName + ":8080");
+				}
 			}
 		}
 	}
@@ -342,14 +353,21 @@ const appConfig = function (config, sla) {
 	}
 
 	if (sla['resource-requirements'] && sla['resource-requirements']['store']) {
+
 		if (sla['resource-requirements']['store'].length === 1) {
-			//TODO remove this 
+			//TODO remove this
 			let storeName = sla.name + "-" + sla['resource-requirements']['store'] + ARCH;
-			app.Env.push("DATABOX_STORE_ENDPOINT=https://" + storeName + ":8080");
+			driver.Env.push("DATABOX_STORE_ENDPOINT=https://" + storeName + ":8080");
+			driver.Env.push("DATABOX_ZMQ_ENDPOINT=tcp://" + storeName + ":5555");
+			driver.Env.push("DATABOX_ZMQ_DEALER_ENDPOINT=tcp://" + storeName + ":5556");
 		} else {
 			for (storeType of sla['resource-requirements']['store']) {
 				let storeName = sla.name + "-" + storeType + ARCH;
-				app.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=https://" + storeName + ":8080");
+				if(storeType == 'core-store') {
+					driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=tcp://" + storeName + ":5555");
+				} else {
+					driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=https://" + storeName + ":8080");
+				}
 			}
 		}
 	}
@@ -500,7 +518,7 @@ async function addPermissionsFromSla(sla) {
 		}
 	}
 
-	//Add permissions for dependent stores 
+	//Add permissions for dependent stores
 	if (sla['resource-requirements'] && sla['resource-requirements']['store']) {
 
 		for (const storeType of sla['resource-requirements']['store']) {

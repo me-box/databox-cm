@@ -1,7 +1,7 @@
 /*jshint esversion: 6 */
 
 const Config = require('./config.json');
-//setup dev env 
+//setup dev env
 const DATABOX_DEV = process.env.DATABOX_DEV === '1';
 if (DATABOX_DEV) {
 	Config.registryUrl = Config.registryUrl_dev;
@@ -22,6 +22,7 @@ const request = require('request');
 const databoxRequestPromise = require('./lib/databox-request-promise.js');
 const databoxAgent = require('./lib/databox-https-agent.js');
 const url = require('url');
+const databox = require('node-databox');
 
 const app = express();
 
@@ -110,20 +111,37 @@ module.exports = {
 								const promises = [];
 								for (const item of json.items) {
 									promises.push(new Promise((resolve, reject) => {
-										databoxRequestPromise({uri: item.href + '/cat'})
-											.then((request) => {
-												let body = [];
-												request
-													.on('error', (error) => {
-														resolve({});
-													})
-													.on('data', (chunk) => {
-														body.push(chunk);
-													})
-													.on('end', () => {
-														resolve(JSON.parse(Buffer.concat(body).toString()));
-													});
+										if(item.href.includes('tcp://')) {
+											//read /cat from core-store
+											let kvc = databox.NewKeyValueClient(item.href,false);
+											kvc.GetDatasourceCatalogue()
+											.then((catStr)=>{
+												kvc.zestClient.ZMQsoc.close();
+												console.log(catStr);
+												resolve(JSON.parse(catStr));
+											})
+											.catch(()=>{
+												kvc.zestClient.ZMQsoc.close();
+												console.log("Error /api/datasource/list can't get from " + item.href);
+												resolve({});
 											});
+										} else {
+											//read /cat from store-json or other store over https
+											databoxRequestPromise({uri: item.href + '/cat'})
+												.then((request) => {
+													let body = [];
+													request
+														.on('error', (error) => {
+															resolve({});
+														})
+														.on('data', (chunk) => {
+															body.push(chunk);
+														})
+														.on('end', () => {
+															resolve(JSON.parse(Buffer.concat(body).toString()));
+														});
+												});
+											}
 									}));
 								}
 								return Promise.all(promises)

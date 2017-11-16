@@ -39,6 +39,7 @@
     "modclean": "^2.1.0",
     "nedb": "^1.8.0",
     "node-forge": "^0.6.45",
+    "node-databox": "0.6.0-rc5",
     "request": "^2.69.0",
     "selfsigned": "^1.8.0",
     "url": "^0.11.0",
