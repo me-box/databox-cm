@@ -140,7 +140,7 @@ const install = async function (sla) {
 		saveSLA(sla);
 
 		//RELAY ON config.TaskTemplate.ContainerSpec.Env to find out communication peers
-		await databoxNet.connectEndpoints(containerConfig, dependentStoreConfigArray);
+		await databoxNet.connectEndpoints(containerConfig, dependentStoreConfigArray, sla);
 
 		//UPDATE SERVICES
 		let dependentStoreConfig;

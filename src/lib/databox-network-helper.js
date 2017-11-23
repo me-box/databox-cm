@@ -46,7 +46,7 @@ module.exports = function(docker) {
             }, {retries: 3, factor: 1});
     };
 
-    const connectEndpoints = async function(config, storeConfigArray) {
+    const connectEndpoints = async function(config, storeConfigArray, sla) {
         let toConnect = [];
 
         let configPeers = peersOfEnvArray(config.TaskTemplate.ContainerSpec.Env);
@@ -56,6 +56,22 @@ module.exports = function(docker) {
             for (let storeConfig of storeConfigArray) {
                 let storePeers = peersOfEnvArray(storeConfig.TaskTemplate.ContainerSpec.Env);
                 if (storePeers.length !== 0) toConnect.push(connectFor(storeConfig.Name, storePeers));
+            }
+        }
+
+        //parse 'external-whitelist' field from SLA
+        if(sla['external-whitelist']) {
+            let external = [];
+            sla['external-whitelist'].forEach((itm) => {
+                itm.urls.forEach((_url) => {
+                    let hostname = url.parse(_url).hostname;
+                    if (!external.includes(hostname)) external.push(hostname);
+                });
+            });
+
+            if(external.length !== 0) {
+                console.log("Connecting ", config.Name, " and externals: ", external);
+                toConnect.push(connectFor(config.Name, external));
             }
         }
 
