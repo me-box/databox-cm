@@ -2,9 +2,12 @@ const request      = require('request');
 const url          = require('url');
 const fs           = require('fs');
 const promiseRetry = require('promise-retry');
+const https        = require('https');
+
+let https_agent = new https.Agent({ca: fs.readFileSync("/run/secrets/DATABOX_ROOT_CA")});
 
 let DATABOX_NETWORK;
-let DATABOX_NETWORK_ENDPOINT;
+let DATABOX_NETWORK_ENDPOINT = "https://databox-network:8080";
 
 const CM_KEY = fs.readFileSync("/run/secrets/DATABOX_NETWORK_KEY", {encoding: 'base64'});
 
@@ -108,9 +111,7 @@ module.exports = function(docker) {
                 }
 
                 DATABOX_NETWORK = containers[0].Names[0].substring(1);
-                DATABOX_NETWORK_ENDPOINT = "http://" + containers[0].NetworkSettings.Networks["databox-system-net"]["IPAddress"] + ":8080"
-
-                console.log("set DATABOX_NETWORK_ENDPOINT to ", DATABOX_NETWORK_ENDPOINT);
+                console.log("set DATABOX_NETWORK to ", DATABOX_NETWORK);
                 return;
 
             });
@@ -255,6 +256,7 @@ module.exports = function(docker) {
                 url: DATABOX_NETWORK_ENDPOINT + "/connect",
                 method: 'POST',
                 body: data,
+                agent: https_agent,
                 json: true,
                 headers: {
                     'x-api-key': CM_KEY
@@ -284,6 +286,7 @@ module.exports = function(docker) {
                 url: DATABOX_NETWORK_ENDPOINT + "/disconnect",
                 method: 'POST',
                 body: data,
+                agent: https_agent,
                 json: true,
                 headers: {
                     'x-api-key': CM_KEY
@@ -312,6 +315,7 @@ module.exports = function(docker) {
                 url: DATABOX_NETWORK_ENDPOINT + "/privileged",
                 method: 'POST',
                 body: data,
+                agent: https_agent,
                 json: true,
                 headers: {
                    'x-api-key': CM_KEY
@@ -321,6 +325,7 @@ module.exports = function(docker) {
                 options,
                 function(err, res, body) {
                     if (err || (res.statusCode < 200 || res.statusCode >= 300)) {
+                        console.log("[addPrivileged] ", err || res);
                         retry()
                     } else {
                         console.log("[addPrivileged] DONE");
