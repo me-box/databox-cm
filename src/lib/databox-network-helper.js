@@ -17,7 +17,9 @@ module.exports = function(docker) {
     /* create a network, get core-network's IP on that network, to serve as DNS resolver */
     const preConfig = async function(sla) {
         let networkName = sla.localContainerName + "-network";
-        let net = await getNetwork(networkName);
+
+        let internal = sla['databox-type'] === 'driver' ? false : true;
+        let net = await getNetwork(networkName, internal);
 
         return new promiseRetry((retry, number) => {
             /* in case network is existed, inspect first, if no network spotted then connect */
@@ -175,11 +177,11 @@ module.exports = function(docker) {
 
     };
 
-    const getNetwork = async function(name) {
+    const getNetwork = async function(name, internal) {
         let config = {
             "Name": name,
             "Driver": "overlay",
-            "Internal": true,
+            "Internal": internal,
             "Attachable": true
         };
 
