@@ -22,6 +22,13 @@ const arbiterKey = fs.readFileSync("/run/secrets/CM_KEY", {encoding: 'base64'});
 const DATABOX_ARBITER_ENDPOINT = "https://arbiter:8080";
 const DATABOX_EXPORT_SERVICE_ENDPOINT = "https://export-service:8080";
 
+//setup dev env
+const DATABOX_DEV = process.env.DATABOX_DEV;
+
+//Get the current running version
+let DATABOX_VERSION = process.env.DATABOX_VERSION;
+
+
 let getRegistryUrlFromSLA = function (sla) {
 	//default to the config file
 	let registryUrl = Config.registryUrl;
@@ -243,6 +250,18 @@ const createSecrets = async function (config, sla) {
 	return config
 };
 
+function calculateImageVersion (registry) {
+
+	if(DATABOX_DEV == 1) {
+		//we are in dev mode try latest
+		return ":latest";
+	} else {
+		//we are not in dev mode try versioned
+		return ":" + DATABOX_VERSION;
+	}
+
+}
+
 const driverConfig = function (config, sla) {
 	console.log("addDriverConfig");
 
@@ -250,8 +269,10 @@ const driverConfig = function (config, sla) {
 
 	let registryUrl = getRegistryUrlFromSLA(sla);
 
+	let version = calculateImageVersion(registryUrl);
+
 	let driver = {
-		image: registryUrl + localContainerName,
+		image: registryUrl + localContainerName + version,
 		Env: [
 			"DATABOX_LOCAL_NAME=" + localContainerName,
 			"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
@@ -288,8 +309,10 @@ const appConfig = function (config, sla) {
 
 	let registryUrl = getRegistryUrlFromSLA(sla);
 
+	let version = calculateImageVersion(registryUrl);
+
 	let app = {
-		image: registryUrl + localContainerName,
+		image: registryUrl + localContainerName + version,
 		Env: [
 			"DATABOX_LOCAL_NAME=" + localContainerName,
 			"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
@@ -341,6 +364,7 @@ const storeConfig = function (configTemplate, sla) {
 		return false;
 	}
 
+
 	let stores = sla['resource-requirements']['store'];
 	let configArray = [];
 	for (let storeName of stores) {
@@ -352,8 +376,10 @@ const storeConfig = function (configTemplate, sla) {
 
 		let registryUrl = getRegistryUrlFromSLA(sla);
 
+		let version = calculateImageVersion(registryUrl);
+
 		let store = {
-			image: registryUrl + rootContainerName,
+			image: registryUrl + rootContainerName + version,
 			Env: [
 				"DATABOX_LOCAL_NAME=" + requiredName,
 				"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
