@@ -29,6 +29,10 @@ const DATABOX_EXPORT_SERVICE_ENDPOINT = "https://export-service:8080";
 //setup dev env
 const DATABOX_DEV = process.env.DATABOX_DEV;
 
+//Get the current running version
+let DATABOX_VERSION = process.env.DATABOX_VERSION;
+
+
 let getRegistryUrlFromSLA = function (sla) {
 
 	//default to the config file
@@ -263,15 +267,32 @@ const createSecrets = async function (config, sla) {
 	return config
 };
 
+
+function calculateImageVersion (registry) {
+
+	if(DATABOX_DEV == 1) {
+		//we are in dev mode try latest
+		return ":latest";
+	} else {
+		//we are not in dev mode try versioned
+		return ":" + DATABOX_VERSION;
+	}
+
+}
+
+
 const driverConfig = function (config, sla, network) {
-	console.log("addDriverConfig");
+
+  console.log("addDriverConfig");
 
 	let localContainerName = sla.name + ARCH;
 
 	let registryUrl = getRegistryUrlFromSLA(sla);
 
+	let version = calculateImageVersion(registryUrl);
+
 	let driver = {
-		image: registryUrl + localContainerName,
+		image: registryUrl + localContainerName + version,
 		Env: [
 			"DATABOX_LOCAL_NAME=" + localContainerName,
 			"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
@@ -311,8 +332,10 @@ const appConfig = function (config, sla, network) {
 
 	let registryUrl = getRegistryUrlFromSLA(sla);
 
+	let version = calculateImageVersion(registryUrl);
+
 	let app = {
-		image: registryUrl + localContainerName,
+		image: registryUrl + localContainerName + version,
 		Env: [
 			"DATABOX_LOCAL_NAME=" + localContainerName,
 			"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
@@ -367,6 +390,7 @@ const storeConfig = function (configTemplate, sla, network) {
 		return false;
 	}
 
+
 	let stores = sla['resource-requirements']['store'];
 	let configArray = [];
 	for (let storeName of stores) {
@@ -378,9 +402,10 @@ const storeConfig = function (configTemplate, sla, network) {
 
 		let registryUrl = getRegistryUrlFromSLA(sla);
 
+		let version = calculateImageVersion(registryUrl);
+
 		let store = {
-			image: registryUrl + rootContainerName,
-			volumes: [],
+			image: registryUrl + rootContainerName + version,
 			Env: [
 				"DATABOX_LOCAL_NAME=" + requiredName,
 				"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
@@ -395,11 +420,8 @@ const storeConfig = function (configTemplate, sla, network) {
 		//config.Networks.push({Target: 'databox_databox-app-net'});
 		config.Networks.push({Target: network.NetworkName});
 
-		if ('volumes' in sla) {
-			for (let vol of sla.volumes) {
-				store.volumes("/tmp/" + requiredName + "-" + vol.replace('/', '') + ":" + vol);
-			}
-		}
+		let vol = "/database"
+		store.Mounts = [{Source:requiredName, Target: vol, type:"volume"}]
 
 		config.Name = requiredName;
 		config.TaskTemplate.ContainerSpec = store;
