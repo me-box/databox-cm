@@ -34,7 +34,7 @@ let getRegistryUrlFromSLA = function (sla) {
 	let registryUrl = Config.registryUrl;
 
 	if (sla.storeUrl) {
-		storeUrl = url.parse(sla.storeUrl);
+		const storeUrl = url.parse(sla.storeUrl);
 		if (storeUrl.hostname === "localhost" || storeUrl.hostname === "127.0.0.1") {
 			//its a locally installed image get it from the local system
 			console.log("Using local registry");
@@ -250,9 +250,9 @@ const createSecrets = async function (config, sla) {
 	return config
 };
 
-function calculateImageVersion (registry) {
+function calculateImageVersion(registry) {
 
-	if(DATABOX_DEV == 1) {
+	if (DATABOX_DEV == 1) {
 		//we are in dev mode try latest
 		return ":latest";
 	} else {
