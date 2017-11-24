@@ -17,24 +17,18 @@ let ARCH = '';
 //	ARCH = '-arm';
 //}
 
-
-const ip = '127.0.0.1';
 const arbiterKey = fs.readFileSync("/run/secrets/CM_KEY", {encoding: 'base64'});
 
 const DATABOX_ARBITER_ENDPOINT = "https://arbiter:8080";
 const DATABOX_EXPORT_SERVICE_ENDPOINT = "https://export-service:8080";
 
-//setup dev env
-const DATABOX_DEV = process.env.DATABOX_DEV;
-
 let getRegistryUrlFromSLA = function (sla) {
-
 	//default to the config file
 	let registryUrl = Config.registryUrl;
 
 	if (sla.storeUrl) {
 		storeUrl = url.parse(sla.storeUrl);
-		if (storeUrl.hostname == "localhost" || storeUrl.hostname == "127.0.0.1") {
+		if (storeUrl.hostname === "localhost" || storeUrl.hostname === "127.0.0.1") {
 			//its a locally installed image get it from the local system
 			console.log("Using local registry");
 			registryUrl = "";
@@ -52,7 +46,6 @@ let getRegistryUrlFromSLA = function (sla) {
 	console.log("SETTING REG TO ::", registryUrl);
 	return registryUrl;
 };
-
 
 
 let arbiterAgent; //An https agent that will not reject certs signed by the CM
@@ -133,9 +126,8 @@ const install = async function (sla) {
 		saveSLA(sla);
 
 		//UPDATE SERVICES
-		let dependentStoreConfig;
 		if (dependentStoreConfigArray !== false) {
-			for (dependentStoreConfig of dependentStoreConfigArray) {
+			for (let dependentStoreConfig of dependentStoreConfigArray) {
 				console.log("[CM] creating dependent store service " + dependentStoreConfig.Name);
 				dependentStoreConfig = await createSecrets(dependentStoreConfig, {
 					"localContainerName": dependentStoreConfig.Name,

@@ -17,10 +17,9 @@ const ARBITER_TOKEN   = fs.readFileSync("/run/secrets/CM_KEY",{encoding:'base64'
  * 2) appropriate arbiter token when communicating with the arbiter
  * 3) Requests and caches macaroon form the arbiter before communicating with databox components other then the arbiter.
  *   
- * @param {object} options a request option object (The only required option is uri) 
- * @param {function} callback a call back on completion. The callback argument gets 3 arguments error, response, body 
+ * @param {object} options a request option object (The only required option is uri)
  */
-module.exports = function (options,callback) {
+module.exports = function (options) {
     return new Promise((resolve,reject)=>{
 
         // TODO handle case where options is a string e.g https://www.some-url.com
@@ -28,24 +27,24 @@ module.exports = function (options,callback) {
         //
         // Workout the host and path of the request
         //
-        var urlObject = url.parse(options.uri);
-        var path = urlObject.pathname;
-        var host = urlObject.hostname;
-        var protocol = urlObject.protocol;
-        var method = options.method || 'GET';
+        const urlObject = url.parse(options.uri);
+	    const path = urlObject.pathname;
+	    const host = urlObject.hostname;
+	    const protocol = urlObject.protocol;
+	    const method = options.method || 'GET';
 
         //request to arbiter do not need a macaroon but do need the ARBITER_TOKEN
-        var isRequestToArbiter = DATABOX_ARBITER_ENDPOINT.indexOf(host) !== -1;
+	    const isRequestToArbiter = DATABOX_ARBITER_ENDPOINT.indexOf(host) !== -1;
 
         //request to an external site or dev component 
         //TODO: Lets not hard code these!! 
-        var isExternalRequest = host.indexOf('.') !== -1;
-        
-        var isExternalDevRequest = host.indexOf("app-server") !== -1 || host.indexOf("localhost") !== -1;
-        
-        var isInternalUiRequest = path.indexOf("/ui") === 0;
+	    const isExternalRequest = host.indexOf('.') !== -1;
 
-        if(protocol == "https:") {
+	    const isExternalDevRequest = host.indexOf("app-server") !== -1 || host.indexOf("localhost") !== -1;
+
+	    const isInternalUiRequest = path.indexOf("/ui") === 0;
+
+        if(protocol === "https:") {
             //use the databox https agent
             options.agent = httpsAgent;
         }
@@ -54,13 +53,13 @@ module.exports = function (options,callback) {
             options.headers = {'X-Api-Key': ARBITER_TOKEN};
             //do the request and call back when done
             //console.log("[databox-request] " + options.uri);
-            resolve(request(options,callback));
+            resolve(request(options));
         
         } else if (isExternalDevRequest || isInternalUiRequest) {
             // we don't need a macaroon for DEV mode external request or UI requests.
             options.headers = {};
             console.log("[databox-request] ExternalRequest " + options.uri);
-            resolve(request(options,callback));
+            resolve(request(options));
         } else if (isExternalRequest ) {
             //
             // we don't need a macaroon for an external request
@@ -69,7 +68,7 @@ module.exports = function (options,callback) {
             options.headers = {};
             options.agent = undefined; //external request use the default agent.
             console.log("[databox-request] ExternalRequest " + options.uri);
-            resolve(request(options,callback));
+            resolve(request(options));
         } else {
             //
             // we are talking to another databox component so we need a macaroon!
@@ -79,7 +78,7 @@ module.exports = function (options,callback) {
                 //do the request and call back when done
                 options.headers = {'X-Api-Key': macaroon};
                 console.log("[databox-request-with-macaroon] ", options.uri);
-                resolve(request(options,callback));
+                resolve(request(options));
             })
             .catch((result)=>{
                 if(result.error !== null) {
@@ -87,7 +86,7 @@ module.exports = function (options,callback) {
                     reject(result.error,result.response,null);
                     macaroonCache.invalidateMacaroon(host,path,method);
                     return;
-                } else if (result.response.statusCode != 200) {
+                } else if (result.response.statusCode !== 200) {
                     //API responded with an error
                     console.log(result.body);
                     reject(result.body,result.response,null);

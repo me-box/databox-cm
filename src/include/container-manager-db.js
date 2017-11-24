@@ -1,8 +1,8 @@
 /*jshint esversion: 6 */
 
 //local storage of SLA 
-var Datastore = require('nedb');
-db = new Datastore({filename: './slaStore/sladatastore.db', autoload: true});
+const Datastore = require('nedb');
+const db = new Datastore({filename: './slaStore/sladatastore.db', autoload: true});
 
 //stop more then one SLA being added to the db
 db.ensureIndex({fieldName: 'SLAName', unique: true});
@@ -29,7 +29,7 @@ exports.getAllSLAs = function () {
 
 exports.putSLA = function (name, sla) {
 	sla['SLAName'] = name;
-	return new Promise((resolve, reject) => db.update({SLAName: name}, sla,  { upsert: true }, function (err, doc) {
+	return new Promise((resolve, reject) => db.update({SLAName: name}, sla, {upsert: true}, function (err, doc) {
 		if (err) {
 			reject("SLA could not be saved" + err);
 			return;

@@ -1,33 +1,29 @@
 /*jshint esversion: 6 */
 
 const Config = require('./config.json');
-//setup dev env
-const DATABOX_DEV = process.env.DATABOX_DEV === '1';
 
-
+const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const express = require('express');
 const bodyParser = require('body-parser');
-const request = require('request');
 const databoxRequestPromise = require('./lib/databox-request-promise.js');
-const databoxAgent = require('./lib/databox-https-agent.js');
 const url = require('url');
-
-const app = express();
 
 module.exports = {
 	proxies: {},
-	app: app,
-	launch: (port, conman, httpsHelper) => {
-
-		const server = http.createServer(app);
-		const installingApps = {};
-
+	launch: function (conman) {
 		//Always proxy to the local store, app UI deals with remote stores
 		this.proxies.store = Config.storeUrl_dev;
 
+		const installingApps = {};
+		const insecureApp = express();
+		insecureApp.get('/cert', (req, res) => {
+			res.contentType('application/x-pem-file');
+			res.sendFile('/certs/containerManager.crt');
+		});
 
+		const app = express();
 		app.enable('trust proxy');
 		app.set('views', 'src/www');
 		app.set('view engine', 'pug');
@@ -56,7 +52,6 @@ module.exports = {
 				console.log("[Proxy] " + req.method + ": " + req.url + " => " + proxyURL);
 				databoxRequestPromise({uri: proxyURL})
 					.then((resolvedRequest) => {
-
 						return req.pipe(resolvedRequest)
 							.on('error', (e) => {
 								console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
@@ -69,7 +64,6 @@ module.exports = {
 								next();
 							});
 					});
-
 			} else {
 				next();
 			}
@@ -85,7 +79,7 @@ module.exports = {
 					console.log(JSON.stringify(request));
 					let body = [];
 					request
-						.on('error', (error) => {
+						.on('error', () => {
 							res.header('Access-Control-Allow-Origin', '*');
 							res.header('Access-Control-Allow-Credentials', true);
 							res.json([]);
@@ -117,18 +111,11 @@ module.exports = {
 								}
 								return Promise.all(promises)
 									.then(results => {
-										let datasources = [];
+										const datasources = [];
 										for (const result of results) {
 											if ('items' in result) {
 												for (const item of result.items) {
 													datasources.push(item);
-													// if ('item-metadata' in item) {
-													// 	for(const metadataItem of item['item-metadata']) {
-													// 		if(metadataItem.rel === '') {
-													// 			datasources.push(item);
-													// 		}
-													// 	}
-													// }
 												}
 											}
 										}
@@ -287,6 +274,12 @@ module.exports = {
 				});
 		});
 
-		server.listen(port);
+		const serverHttp = http.createServer(insecureApp);
+		serverHttp.listen(Config.insecurePort);
+
+		const certificate = fs.readFileSync('/certs/container-manager.pem');
+		const credentials = {key: certificate, cert: certificate};
+		const serverHttps = https.createServer(credentials, app);
+		serverHttps.listen(Config.securePort);
 	}
 };
