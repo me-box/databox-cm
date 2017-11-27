@@ -28,7 +28,7 @@ function appConfigDisplay(manifest, sensors) {
 		sensors: sensors
 	});
 
-	if('packages' in manifest) {
+	if('packages' in manifest && manifest.packages.length > 1) {
 		for(let index = 0; index < manifest.packages.length; index++) {
 			let databoxPackage = manifest.packages[index];
 			let packageID = "pack_" + (databoxPackage.id || index);
@@ -51,26 +51,23 @@ function appConfigDisplay(manifest, sensors) {
 			method: "POST",
 			body: JSON.stringify(manifest),
 		})
-			.then((res) => {
+			.then(() => {
 				router.navigate('/' + manifest['databox-type'] + '/installed');
 			});
 	});
 
-	let menus = document.getElementsByClassName('mdc-simple-menu');
-	for (const menuElement of menus) {
-		const menu = new mdc.menu.MDCSimpleMenu(menuElement);
-		menuElement.parentElement.addEventListener('click', () => menu.open = !menu.open);
-	}
-
-
-	let menuItems = document.getElementsByClassName('mdc-list-item');
-	for(const menuItem of menuItems) {
-		if(menuItem.getAttribute('role') === 'menuitem') {
-			menuItem.addEventListener('click', () => {
-				const clientid = menuItem.getAttribute('datasource');
-				for(const datasource of manifest.datasources) {
-					if(datasource.clientid === clientid) {
-						const sensorHref = menuItem.getAttribute('sensor');
+	let selects = document.getElementsByTagName('select');
+	for(const selectElements of selects) {
+		selectElements.addEventListener('change', (event) => {
+			const selectElement = event.currentTarget;
+			const clientid = selectElement.getAttribute('datasource');
+			for(const datasource of manifest.datasources) {
+				if(datasource.clientid === clientid) {
+					if(selectElement.selectedIndex === 0) {
+						datasource.hypercat = null;
+						appConfigDisplay(manifest, sensors);
+					} else {
+						const sensorHref = selectElement.value;
 						for (const sensor of sensors) {
 							if(sensor.href === sensorHref) {
 								datasource.hypercat = sensor;
@@ -78,34 +75,69 @@ function appConfigDisplay(manifest, sensors) {
 								break;
 							}
 						}
-						break;
 					}
+					break;
 				}
-			});
-		}
+			}
+		});
+	}
+
+	const MDCSelect = mdc.select.MDCSelect;
+	let mdcSelects = document.getElementsByClassName('mdc-select');
+	for(const mdcSelect of mdcSelects) {
+		const select = new MDCSelect(mdcSelect);
+		select.listen('MDCSelect:change', () => {
+			const selectElement = select;
+			const clientid = mdcSelect.getAttribute('datasource');
+			for(const datasource of manifest.datasources) {
+				if(datasource.clientid === clientid) {
+					const sensorHref = selectElement.value;
+					for (const sensor of sensors) {
+						if(sensor.href === sensorHref) {
+							datasource.hypercat = sensor;
+							appConfigDisplay(manifest, sensors);
+							break;
+						}
+					}
+					break;
+				}
+			}
+		});
+	}
+
+	for(const mdcSelect of mdcSelects) {
+		mdcSelect.style.minWidth = mdcSelect.style.width;
+		mdcSelect.style.width = null;
 	}
 }
 
 router.on('/:name/config', (params) => {
-	console.log(params);
 	showSpinner();
 	listApps()
 		.then((apps) => {
 			const manifest = JSON.parse(JSON.stringify(apps[params.name][0].manifest));
 			listDatasources(manifest)
 				.then((sensors) => {
-					console.log(sensors);
 					appConfigDisplay(manifest, sensors);
 				});
 		});
 });
 
+function getManifest(apps, name, id) {
+	const manifests = apps[name];
+	for(const manifest of manifests) {
+		if(manifest._id === id) {
+			return manifest.manifest;
+		}
+	}
+	return manifests[0].manifest
+}
+
 router.on('/:name/config/:id', (params) => {
 	console.log(params);
 	listApps()
 		.then((apps) => {
-			// TODO manifest from id
-			const manifest = JSON.parse(JSON.stringify(apps[params.name][0].manifest));
+			const manifest = JSON.parse(JSON.stringify(getManifest(apps, params.name, params.id)));
 			listDatasources(manifest)
 				.then((sensors) => {
 					appConfigDisplay(manifest, sensors);

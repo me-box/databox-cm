@@ -1,25 +1,15 @@
 const router = new Navigo(null, true, '#!');
 
-const stores = [
-	// {
-	// 	"name": "Up In the Clouds Store",
-	// 	"url": "http://store.upintheclouds.org/"
-	// },
-	// {
-	// 	"name": "IoT Databox Store",
-	// 	"url": "https://store.iotdatabox.com/"
-	// }
-];
+let stores = [];
 
 const sensorDriver = 'driver-sensingkit';
 const isApp = typeof cordova !== 'undefined';
 let databoxURL = 'http://localhost:8989/';
 if (!isApp) {
 	const url = new URL(window.location);
-	databoxURL = url.protocol + '//' + url.host + '/';
+	databoxURL = url.protocol + '//' + url.hostname + ':8989' + '/';
 	document.getElementById('sensing').style.display = 'none';
 }
-let apps;
 
 function checkOk(res) {
 	if (!res.ok) {
@@ -29,8 +19,13 @@ function checkOk(res) {
 	return res;
 }
 
-function showSpinner() {
+function showSpinner(cancel) {
 	document.getElementById('content').innerHTML = spinnerTemplate();
+	if (cancel) {
+		const button = document.getElementById('cancel_button');
+		button.style.display = 'block';
+		button.addEventListener('click', cancel);
+	}
 }
 
 function scanQR() {
@@ -67,47 +62,71 @@ function submit(event) {
 	}
 }
 
-function connect() {
-	const field = document.getElementById('connectField');
-	if (field) {
-		let value = field.value;
-		if (value.indexOf('://') === -1) {
-			value = 'http://' + value;
+function connect(retry) {
+	if (!retry) {
+		const field = document.getElementById('connectField');
+		if (field) {
+			let value = field.value.trim();
+			if (value.indexOf('://') === -1) {
+				value = 'http://' + value;
+			}
+			const url = new URL(value);
+			if (!url.port) {
+				url.port = '8989';
+			}
+			localStorage.setItem('databoxURL', url.toString());
 		}
-		const url = new URL(value);
-		if (!url.port) {
-			url.port = '8989';
-		}
-		localStorage.setItem('databoxURL', url.toString());
 	}
-
 	let value = localStorage.getItem('databoxURL');
 	if (value) {
 		databoxURL = value;
 	}
 
 	toolbarDisabled();
-	showSpinner();
+	showSpinner(() => {
+		showConnect(false);
+	});
+	const fetchURL = databoxURL;
 	fetch(databoxURL + 'api/driver/list')
 		.then(checkOk)
 		.then(() => {
-			const url = new URL(databoxURL);
-			url.port = '8181';
-			stores.push({
-				"name": "Local Store",
-				"url": url.toString()
-			});
+			if (document.getElementById('spinner') && fetchURL === databoxURL) {
+				const hostlabel = document.getElementById('hostname');
+				const url = new URL(databoxURL);
+				if (isApp || localStorage.getItem('databoxURL')) {
+					hostlabel.innerText = url.hostname;
+					hostlabel.parentElement.addEventListener('click', () => {
+						router.navigate('/connect')
+					});
+					hostlabel.parentElement.style.cursor = 'pointer';
+				}
 
-			router.resolve();
+				url.port = '8181';
+				stores = [{
+					"name": "Local Store",
+					"url": url.toString()
+				},
+				{
+					"name": "IoT Databox Store",
+					"url": "https://store.iotdatabox.com/"
+				}];
+
+				if (router.lastRouteResolved() !== null && router.lastRouteResolved().url === '/connect') {
+					router.navigate('/');
+				} else if (window.location.hash === '#!/connect') {
+					router.navigate('/');
+				} else {
+					router.resolve();
+				}
+			}
 		})
 		.catch((error) => {
-			console.log(error);
-			document.getElementById('content').innerHTML = connectTemplate({qr_scan: isApp});
-			const tfs = document.querySelectorAll('.mdc-textfield');
-			for (const tf of tfs) {
-				mdc.textfield.MDCTextfield.attachTo(tf);
+			if (document.getElementById('spinner') && fetchURL === databoxURL) {
+				console.log(error);
+				showConnect(true);
+				const url = new URL(databoxURL);
+				document.getElementById('error_host').innerText = url.hostname;
 			}
-			document.getElementById('connectField').focus();
 		});
 }
 
@@ -142,46 +161,42 @@ function toolbarBack() {
 
 function listApps(type) {
 	let promise;
-	if (!apps) {
-		let proms = [];
-		for (let store of stores) {
-			proms.push(fetch(store.url + 'app/list')
-				.then(checkOk)
-				.then((res) => res.json())
-				.then((json) => {
-					for (const app of json.apps) {
-						app.url = store.url + 'app/get/?name=' + app.manifest.name;
-						app.store = store.name;
-						app.displayName = app.manifest.name.replace('databox', '').replace('driver-', '').replace('app-', '').split('-').join(' ').trim();
-					}
-					return json;
-				})
-				.catch((error) => {
-					return {'apps': []}
-				}));
-		}
-		promise = Promise.all(proms)
-			.then((appLists) => {
-				apps = {};
-				for (const appList of appLists) {
-					for (const app of appList.apps) {
-						const name = app.manifest.name;
-						let versions = [];
-						if (name in apps) {
-							versions = apps[name];
-						}
 
-						versions.push(app);
-						apps[name] = versions;
-					}
+	let proms = [];
+	for (let store of stores) {
+		proms.push(fetch(store.url + 'app/list')
+			.then(checkOk)
+			.then((res) => res.json())
+			.then((json) => {
+				for (const app of json.apps) {
+					app.url = store.url + 'app/get/?name=' + app.manifest.name;
+					app.manifest.storeUrl = app.url;
+					app.store = store.name;
+					app.displayName = app.manifest.name.replace('databox', '').replace('driver-', '').replace('app-', '').split('-').join(' ').trim();
 				}
-				return apps;
-			});
-	} else {
-		promise = new Promise((resolve) => {
-			resolve(apps);
-		})
+				return json;
+			})
+			.catch((error) => {
+				return {'apps': []}
+			}));
 	}
+	promise = Promise.all(proms)
+		.then((appLists) => {
+			let apps = {};
+			for (const appList of appLists) {
+				for (const app of appList.apps) {
+					const name = app.manifest.name;
+					let versions = [];
+					if (name in apps) {
+						versions = apps[name];
+					}
+
+					versions.push(app);
+					apps[name] = versions;
+				}
+			}
+			return apps;
+		});
 
 	if (type) {
 		const appType = type;
@@ -202,6 +217,11 @@ function listApps(type) {
 }
 
 router.on(() => {
+	toolbarDrawer();
+	document.getElementById('content').innerHTML = welcomeTemplate();
+});
+
+router.on('/driver/app', () => {
 	showSpinner();
 	listApps('app')
 		.then((apps) => {
@@ -210,6 +230,10 @@ router.on(() => {
 				apps: apps
 			});
 		});
+});
+
+router.on('/connect', () => {
+	showConnect(false);
 });
 
 router.on('/driver/store', () => {
@@ -223,7 +247,35 @@ router.on('/driver/store', () => {
 		});
 });
 
+function showConnect(error) {
+	document.getElementById('toolbartitle').innerText = 'Databox';
+	document.getElementById('content').innerHTML = connectTemplate({qr_scan: isApp, error: error});
+	const tfs = document.querySelectorAll('.mdc-textfield');
+	for (const tf of tfs) {
+		mdc.textfield.MDCTextfield.attachTo(tf);
+	}
+	const field = document.getElementById('connectField');
+	const stored = localStorage.getItem('databoxURL');
+	if (stored) {
+		const url = new URL(stored);
+		if (url.port !== '8989') {
+			field.value = url.host;
+		} else {
+			field.value = url.hostname;
+		}
+	}
+	field.addEventListener('input', () => {
+		const field = document.getElementById('connectField');
+		if (field) {
+			const button = document.getElementById('connect_button');
+			button.disabled = field.value.trim().length <= 0;
+		}
+	});
+	field.focus();
+}
+
 function showSensingInstall() {
+	console.log("Show Sensing Install");
 	document.getElementById('content').innerHTML = alertTemplate({
 		icon: 'network_check',
 		button: 'Enable Mobile Sensor Data'
@@ -252,10 +304,10 @@ function showSensingInstall() {
 }
 
 function showSensingStart() {
+	console.log("Show Sensing Install");
 	SensingKit.isRunning((result) => {
 		console.log(result);
-		if(result === 'true')
-		{
+		if (result === 'true') {
 			showSpinner();
 			SensingKit.start(databoxURL + sensorDriver, (error) => {
 				console.log(error);
@@ -270,8 +322,7 @@ function showSensingStart() {
 				content.appendChild(iframe);
 			});
 		}
-		else
-		{
+		else {
 			document.getElementById('content').innerHTML = alertTemplate({
 				icon: 'network_check',
 				button: 'Start Recording Mobile Sensor Data'
@@ -354,6 +405,29 @@ router.on('/:name', (params) => {
 					document.getElementById('content').innerHTML = appTemplate({
 						app: app
 					});
+
+					const installURL = "#!/" + app[0].manifest.name + "/config/";
+					const menuItems = document.getElementsByClassName('version-item');
+					for(const menuItem of menuItems) {
+						menuItem.addEventListener('click', function (event) {
+							document.getElementById('install_link').href = installURL + event.target.id;
+							const menuItems = document.getElementsByClassName('version-item');
+							for(const menuItem of menuItems) {
+								menuItem.classList.remove('mdc-simple-menu--selected');
+							}
+							event.target.classList.add('mdc-simple-menu--selected');
+						})
+					}
+
+					if(menuItems.length > 0) {
+						menuItems.item(0).classList.add('mdc-simple-menu--selected');
+					}
+
+					const menu = new mdc.menu.MDCSimpleMenu(document.getElementById('versionMenu'));
+					document.getElementById('versionButton').addEventListener('click', function () {
+						menu.open = !menu.open
+					});
+
 				})
 				.catch((error) => {
 					toolbarBack();

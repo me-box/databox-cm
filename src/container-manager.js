@@ -1,3 +1,4 @@
+/*jshint esversion: 6 */
 const Config = require('./config.json');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -8,6 +9,8 @@ const url = require('url');
 const Docker = require('dockerode');
 const docker = new Docker();
 const db = require('./include/container-manager-db.js');
+
+const databoxNet = require('./lib/databox-network-helper.js')(docker);
 
 //ARCH to append -arm to the end of a container name if running on arm
 //swarm mode dose not use this for now
@@ -25,18 +28,37 @@ const DATABOX_EXPORT_SERVICE_ENDPOINT = "https://export-service:8080";
 
 //setup dev env
 const DATABOX_DEV = process.env.DATABOX_DEV;
-if (DATABOX_DEV == 1) {
-	Config.registryUrl = '';
-	Config.storeUrl = Config.storeUrl_dev;
-	console.log("Using dev registry::", Config.registryUrl);
-}
 
-const DATABOX_SDK = process.env.DATABOX_SDK;
-if (DATABOX_SDK == 1) {
-	Config.registryUrl = Config.registryUrl_sdk;
-	Config.storeUrl = Config.storeUrl_sdk;
-	console.log("Using sdk registry::", Config.registryUrl);
-}
+//Get the current running version
+let DATABOX_VERSION = process.env.DATABOX_VERSION;
+
+
+let getRegistryUrlFromSLA = function (sla) {
+
+	//default to the config file
+	let registryUrl = Config.registryUrl;
+
+	if (sla.storeUrl) {
+		storeUrl = url.parse(sla.storeUrl);
+		if (storeUrl.hostname == "localhost" || storeUrl.hostname == "127.0.0.1") {
+			//its a locally installed image get it from the local system
+			console.log("Using local registry");
+			registryUrl = "";
+		} else {
+			if(sla.registry) {
+				//allow overriding image location in manifest for SDK
+				registryUrl = sla.registry+"/";
+			} else {
+				//default to databox systems
+				console.log("Using databoxsystems registry");
+				registryUrl = "databoxsystems/";
+			}
+		}
+	}
+	console.log("SETTING REG TO ::", registryUrl);
+	return registryUrl;
+};
+
 
 
 let arbiterAgent; //An https agent that will not reject certs signed by the CM
@@ -125,6 +147,9 @@ const install = async function (sla) {
 			"UpdateConfig": {
 				"Parallelism": 1
 			},
+			"EndpointSpec": {
+				"Mode": "dnsrr"
+			},
 			"Networks": []
 		};
 
@@ -132,16 +157,19 @@ const install = async function (sla) {
 		let dependentStoreConfigTemplate = JSON.parse(JSON.stringify(containerConfig));
 		let dependentStoreConfigArray;
 
+		let networkConfig = await databoxNet.preConfig(sla);
+		console.log("preconfig: ", networkConfig);
+
 		switch (sla['databox-type']) {
 			case 'app':
-				containerConfig = appConfig(containerConfig, sla);
+				containerConfig = appConfig(containerConfig, sla, networkConfig);
 				containerConfig = await createSecrets(containerConfig, sla);
-				dependentStoreConfigArray = storeConfig(dependentStoreConfigTemplate, sla);
+				dependentStoreConfigArray = storeConfig(dependentStoreConfigTemplate, sla, networkConfig);
 				break;
 			case 'driver':
-				containerConfig = driverConfig(containerConfig, sla);
+				containerConfig = driverConfig(containerConfig, sla, networkConfig);
 				containerConfig = await createSecrets(containerConfig, sla);
-				dependentStoreConfigArray = storeConfig(dependentStoreConfigTemplate, sla);
+				dependentStoreConfigArray = storeConfig(dependentStoreConfigTemplate, sla, networkConfig);
 				break;
 			default:
 				reject('Missing or unsupported databox-type in SLA');
@@ -149,6 +177,9 @@ const install = async function (sla) {
 		}
 
 		saveSLA(sla);
+
+		//RELAY ON config.TaskTemplate.ContainerSpec.Env to find out communication peers
+		await databoxNet.connectEndpoints(containerConfig, dependentStoreConfigArray, sla);
 
 		//UPDATE SERVICES
 		let dependentStoreConfig;
@@ -184,6 +215,7 @@ const install = async function (sla) {
 exports.install = install;
 
 const uninstall = async function (name) {
+	let networkConfig = await databoxNet.networkOfService(name);
 	return docker.getService(name).remove()
 		.then(() => docker.listSecrets({filters: {'label': ['databox.service.name=' + name]}}))
 		.then((secrets) => {
@@ -194,6 +226,7 @@ const uninstall = async function (name) {
 
 			return Promise.all(proms)
 		})
+		.then(() => databoxNet.postUninstall(name, networkConfig))
 		.then(() => db.deleteSLA(name, false));
 };
 exports.uninstall = uninstall;
@@ -282,18 +315,40 @@ const createSecrets = async function (config, sla) {
 	return config
 };
 
-const driverConfig = function (config, sla) {
-	console.log("addDriverConfig");
+
+function calculateImageVersion (registry) {
+
+	if(DATABOX_DEV == 1) {
+		//we are in dev mode try latest
+		return ":latest";
+	} else {
+		//we are not in dev mode try versioned
+		return ":" + DATABOX_VERSION;
+	}
+
+}
+
+
+const driverConfig = function (config, sla, network) {
+
+  console.log("addDriverConfig");
 
 	let localContainerName = sla.name + ARCH;
 
+	let registryUrl = getRegistryUrlFromSLA(sla);
+
+	let version = calculateImageVersion(registryUrl);
+
 	let driver = {
-		image: Config.registryUrl + localContainerName,
+		image: registryUrl + localContainerName + version,
 		Env: [
 			"DATABOX_LOCAL_NAME=" + localContainerName,
 			"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
 		],
-		secrets: []
+		secrets: [],
+		DNSConfig: {
+			NameServers: [network.DNS]
+		}
 	};
 
 	if (sla['resource-requirements'] && sla['resource-requirements']['store']) {
@@ -317,7 +372,8 @@ const driverConfig = function (config, sla) {
 	}
 
 
-	config.Networks.push({Target: 'databox_databox-driver-net'});
+	//config.Networks.push({Target: 'databox_databox-driver-net'});
+	config.Networks.push({Target: network.NetworkName});
 	config.Name = localContainerName;
 	config.TaskTemplate.ContainerSpec = driver;
 	config.TaskTemplate.Placement.constraints = ["node.role == manager"];
@@ -325,16 +381,24 @@ const driverConfig = function (config, sla) {
 	return config;
 };
 
-const appConfig = function (config, sla) {
+const appConfig = function (config, sla, network) {
 	let localContainerName = sla.name + ARCH;
+
+	let registryUrl = getRegistryUrlFromSLA(sla);
+
+	let version = calculateImageVersion(registryUrl);
+
 	let app = {
-		image: Config.registryUrl + localContainerName,
+		image: registryUrl + localContainerName + version,
 		Env: [
 			"DATABOX_LOCAL_NAME=" + localContainerName,
 			"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
 			"DATABOX_EXPORT_SERVICE_ENDPOINT=" + DATABOX_EXPORT_SERVICE_ENDPOINT
 		],
-		secrets: []
+		secrets: [],
+		DNSConfig: {
+			NameServers: [network.DNS]
+		}
 	};
 
 	//packages are being removed.
@@ -372,19 +436,21 @@ const appConfig = function (config, sla) {
 		}
 	}
 
-	config.Networks.push({Target: 'databox_databox-app-net'});
+	//config.Networks.push({Target: 'databox_databox-app-net'});
+	config.Networks.push({Target: network.NetworkName});
 	config.Name = localContainerName;
 	config.TaskTemplate.ContainerSpec = app;
 	config.TaskTemplate.Placement.constraints = ["node.role == manager"];
 	return config;
 };
 
-const storeConfig = function (configTemplate, sla) {
+const storeConfig = function (configTemplate, sla, network) {
 	console.log("addStoreConfig");
 
 	if (!sla['resource-requirements'] || !sla['resource-requirements']['store']) {
 		return false;
 	}
+
 
 	let stores = sla['resource-requirements']['store'];
 	let configArray = [];
@@ -395,24 +461,28 @@ const storeConfig = function (configTemplate, sla) {
 		let rootContainerName = storeName;
 		let requiredName = sla.name + "-" + storeName + ARCH;
 
+		let registryUrl = getRegistryUrlFromSLA(sla);
+
+		let version = calculateImageVersion(registryUrl);
+
 		let store = {
-			image: Config.registryUrl + rootContainerName,
-			volumes: [],
+			image: registryUrl + rootContainerName + version,
 			Env: [
 				"DATABOX_LOCAL_NAME=" + requiredName,
 				"DATABOX_ARBITER_ENDPOINT=" + DATABOX_ARBITER_ENDPOINT,
 			],
-			secrets: []
+			secrets: [],
+			DNSConfig: {
+				NameServers: [network.DNS]
+			}
 		};
 
-		config.Networks.push({Target: 'databox_databox-driver-net'});
-		config.Networks.push({Target: 'databox_databox-app-net'});
+		//config.Networks.push({Target: 'databox_databox-driver-net'});
+		//config.Networks.push({Target: 'databox_databox-app-net'});
+		config.Networks.push({Target: network.NetworkName});
 
-		if ('volumes' in sla) {
-			for (let vol of sla.volumes) {
-				store.volumes("/tmp/" + requiredName + "-" + vol.replace('/', '') + ":" + vol);
-			}
-		}
+		let vol = "/database"
+		store.Mounts = [{Source:requiredName, Target: vol, type:"volume"}]
 
 		config.Name = requiredName;
 		config.TaskTemplate.ContainerSpec = store;
@@ -590,12 +660,14 @@ async function addPermissionsFromSla(sla) {
 
 exports.connect = function () {
 	return new Promise((resolve, reject) => docker.ping(function (err, data) {
-		if (err) {
-			reject("Cant connect to docker!");
-			return;
-		}
-		resolve();
-	}));
+			if (err) {
+				reject("Cant connect to docker!");
+				return;
+			}
+			resolve();
+		}))
+		.then(() => databoxNet.identifySelf())
+		.then(() => databoxNet.identifyCM());
 };
 
 const listContainers = function () {

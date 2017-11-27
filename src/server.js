@@ -3,16 +3,7 @@
 const Config = require('./config.json');
 //setup dev env
 const DATABOX_DEV = process.env.DATABOX_DEV === '1';
-if (DATABOX_DEV) {
-	Config.registryUrl = Config.registryUrl_dev;
-	Config.storeUrl = Config.storeUrl_dev;
-}
 
-const DATABOX_SDK = process.env.DATABOX_SDK === '1';
-if (DATABOX_SDK) {
-	Config.registryUrl = Config.registryUrl_sdk;
-	Config.storeUrl = Config.storeUrl_sdk;
-}
 
 const http = require('http');
 const https = require('https');
@@ -34,11 +25,9 @@ module.exports = {
 		const server = http.createServer(app);
 		const installingApps = {};
 
-		if (DATABOX_DEV) {
-			this.proxies.store = "http://" + Config.localAppStoreName + ":8181";
-		} else {
-			this.proxies.store = Config.storeUrl;
-		}
+		//Always proxy to the local store, app UI deals with remote stores
+		this.proxies.store = Config.storeUrl_dev;
+
 
 		app.enable('trust proxy');
 		app.set('views', 'src/www');
@@ -66,22 +55,30 @@ module.exports = {
 				}
 
 				console.log("[Proxy] " + req.method + ": " + req.url + " => " + proxyURL);
-				databoxRequestPromise({uri: proxyURL})
-					.then((resolvedRequest) => {
+				let retried = false;
+				let retryOnce = function () {
+					databoxRequestPromise({uri: proxyURL})
+						.then((resolvedRequest) => {
 
-						return req.pipe(resolvedRequest)
-							.on('error', (e) => {
-								console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
-							})
-							.pipe(res)
-							.on('error', (e) => {
-								console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
-							})
-							.on('end', () => {
-								next();
-							});
-					});
-
+							return req.pipe(resolvedRequest)
+								.on('error', (e) => {
+									console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
+									if (!retried && e.message.includes("getaddrinfo ENOTFOUND")) {
+										retried = true;
+										console.log('[Proxy] retry ' + req.url);
+										retryOnce();
+									}
+								})
+								.pipe(res)
+								.on('error', (e) => {
+									console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
+								})
+								.on('end', () => {
+									next();
+								});
+						});
+				};
+				retryOnce();
 			} else {
 				next();
 			}
@@ -255,11 +252,10 @@ module.exports = {
 					}
 
 					const options = {'url': '', 'method': 'GET'};
-					if (DATABOX_DEV) {
-						options.url = "http://" + Config.localAppStoreName + ":8181" + '/app/list';
-					} else {
-						options.url = Config.storeUrl + '/app/list';
-					}
+
+					//Always use local store, app UI deals with remote stores
+					options.url = Config.storeUrl_dev + '/app/list';
+
 					return new Promise((resolve, reject) => {
 						request(options, (error, response, body) => {
 							if (error) {
