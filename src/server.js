@@ -16,20 +16,24 @@ module.exports = {
 		//Always proxy to the local store, app UI deals with remote stores
 		this.proxies.store = Config.storeUrl_dev;
 
-		const installingApps = {};
-		const insecureApp = express();
-		insecureApp.get('/cert.pem', (req, res) => {
+		const appHttp = express();
+		appHttp.use(express.static('src/www/http'));
+		appHttp.use(express.static('src/www/shared'));
+		appHttp.get('/cert.pem', (req, res) => {
 			res.contentType('application/x-pem-file');
 			res.sendFile('/certs/containerManager.crt');
 		});
 
-		const app = express();
-		app.enable('trust proxy');
-		app.set('views', 'src/www');
-		app.set('view engine', 'pug');
-		app.use(express.static('src/www'));
+		const serverHttp = http.createServer(appHttp);
+		serverHttp.listen(Config.portHttp);
 
-		app.use((req, res, next) => {
+
+		const appHttps = express();
+		appHttps.enable('trust proxy');
+		appHttps.use(express.static('src/www/https'));
+		appHttps.use(express.static('src/www/shared'));
+
+		appHttps.use((req, res, next) => {
 			const firstPart = req.path.split('/')[1];
 			if (firstPart in this.proxies) {
 				const replacement = this.proxies[firstPart];
@@ -80,10 +84,10 @@ module.exports = {
 		});
 
 		// Needs to be after the proxy
-		app.use(bodyParser.json());
-		app.use(bodyParser.urlencoded({extended: false}));
+		appHttps.use(bodyParser.json());
+		appHttps.use(bodyParser.urlencoded({extended: false}));
 
-		app.get('/api/datasource/list', (req, res) => {
+		appHttps.get('/api/datasource/list', (req, res) => {
 			databoxRequestPromise({uri: 'https://arbiter:8080/cat'})
 				.then((request) => {
 					console.log(JSON.stringify(request));
@@ -145,7 +149,7 @@ module.exports = {
 				});
 		});
 
-		app.get('/api/installed/list', (req, res) => {
+		appHttps.get('/api/installed/list', (req, res) => {
 			conman.listServices()
 				.then((services) => {
 					console.log(services);
@@ -168,7 +172,7 @@ module.exports = {
 				});
 		});
 
-		app.get('/api/:type/list', (req, res) => {
+		appHttps.get('/api/:type/list', (req, res) => {
 			conman.listServices(req.params.type)
 				.then((services) => {
 					let proms = [];
@@ -204,7 +208,7 @@ module.exports = {
 				});
 		});
 
-		app.options('/api/install', (req, res) => {
+		appHttps.options('/api/install', (req, res) => {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Credentials', true);
 			res.header('Access-Control-Allow-Methods', 'POST');
@@ -213,16 +217,16 @@ module.exports = {
 		});
 
 		const jsonParser = bodyParser.json();
-		app.post('/api/install', jsonParser, (req, res) => {
+		appHttps.post('/api/install', jsonParser, (req, res) => {
 			const sla = req.body;
 			console.log(sla);
-			installingApps[sla.name] = sla['databox-type'] === undefined ? 'app' : sla['databox-type'];
+			httpApp[sla.name] = sla['databox-type'] === undefined ? 'app' : sla['databox-type'];
 
 			conman.install(sla)
 				.then((config) => {
 					console.log('[' + sla.name + '] Installed', config);
 					for (const name of config) {
-						delete installingApps[name];
+						delete httpApp[name];
 						this.proxies[name] = name + ':8080';
 						console.log("Proxy added for ", name)
 					}
@@ -236,7 +240,7 @@ module.exports = {
 				});
 		});
 
-		app.options('/api/restart', (req, res) => {
+		appHttps.options('/api/restart', (req, res) => {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Credentials', true);
 			res.header('Access-Control-Allow-Methods', 'POST');
@@ -244,7 +248,7 @@ module.exports = {
 			res.json({status: 200, msg: "Success"});
 		});
 
-		app.post('/api/restart', (req, res) => {
+		appHttps.post('/api/restart', (req, res) => {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Credentials', true);
 			conman.restart(req.body.id)
@@ -259,7 +263,7 @@ module.exports = {
 		});
 
 
-		app.options('/api/uninstall', (req, res) => {
+		appHttps.options('/api/uninstall', (req, res) => {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Credentials', true);
 			res.header('Access-Control-Allow-Methods', 'POST');
@@ -267,7 +271,7 @@ module.exports = {
 			res.json({status: 200, msg: "Success"});
 		});
 
-		app.post('/api/uninstall', (req, res) => {
+		appHttps.post('/api/uninstall', (req, res) => {
 			//console.log("Uninstalling " + req.body.id);
 			const name = req.body.id;
 			res.header('Access-Control-Allow-Origin', '*');
@@ -284,12 +288,9 @@ module.exports = {
 				});
 		});
 
-		const serverHttp = http.createServer(insecureApp);
-		serverHttp.listen(Config.insecurePort);
-
 		const certificate = fs.readFileSync('/certs/container-manager.pem');
 		const credentials = {key: certificate, cert: certificate};
-		const serverHttps = https.createServer(credentials, app);
-		serverHttps.listen(Config.securePort);
+		const serverHttps = https.createServer(credentials, appHttps);
+		serverHttps.listen(Config.portHttps);
 	}
 };
