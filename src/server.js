@@ -18,7 +18,7 @@ module.exports = {
 
 		const installingApps = {};
 		const insecureApp = express();
-		insecureApp.get('/cert', (req, res) => {
+		insecureApp.get('/cert.pem', (req, res) => {
 			res.contentType('application/x-pem-file');
 			res.sendFile('/certs/containerManager.crt');
 		});
