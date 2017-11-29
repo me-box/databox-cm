@@ -194,6 +194,8 @@ const install = async function (sla) {
 					.catch((err) => {
 						console.log("[ERROR] creating dependent store service ", dependentStoreConfig, err)
 					});
+
+					//TODO wait for store to start
 			}
 
 		}
@@ -421,9 +423,9 @@ const appConfig = function (config, sla, network) {
 		if (sla['resource-requirements']['store'].length === 1) {
 			//TODO remove this
 			let storeName = sla.name + "-" + sla['resource-requirements']['store'] + ARCH;
-			driver.Env.push("DATABOX_STORE_ENDPOINT=https://" + storeName + ":8080");
-			driver.Env.push("DATABOX_ZMQ_ENDPOINT=tcp://" + storeName + ":5555");
-			driver.Env.push("DATABOX_ZMQ_DEALER_ENDPOINT=tcp://" + storeName + ":5556");
+			app.Env.push("DATABOX_STORE_ENDPOINT=https://" + storeName + ":8080");
+			app.Env.push("DATABOX_ZMQ_ENDPOINT=tcp://" + storeName + ":5555");
+			app.Env.push("DATABOX_ZMQ_DEALER_ENDPOINT=tcp://" + storeName + ":5556");
 		} else {
 			for (storeType of sla['resource-requirements']['store']) {
 				let storeName = sla.name + "-" + storeType + ARCH;
