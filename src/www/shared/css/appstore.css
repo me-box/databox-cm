@@ -59,6 +59,7 @@ iframe {
 
 .mdc-grid-tile__primary {
 	background-color: transparent;
+	display: contents;
 }
 
 .mdc-toolbar__section .material-icons {

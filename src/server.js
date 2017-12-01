@@ -23,7 +23,6 @@ module.exports = {
 			res.contentType('application/x-pem-file');
 			res.sendFile('/certs/containerManager.crt');
 		});
-
 		const serverHttp = http.createServer(appHttp);
 		serverHttp.listen(Config.portHttp);
 
@@ -220,13 +219,11 @@ module.exports = {
 		appHttps.post('/api/install', jsonParser, (req, res) => {
 			const sla = req.body;
 			console.log(sla);
-			httpApp[sla.name] = sla['databox-type'] === undefined ? 'app' : sla['databox-type'];
 
 			conman.install(sla)
 				.then((config) => {
 					console.log('[' + sla.name + '] Installed', config);
 					for (const name of config) {
-						delete httpApp[name];
 						this.proxies[name] = name + ':8080';
 						console.log("Proxy added for ", name)
 					}
