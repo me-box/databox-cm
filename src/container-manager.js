@@ -548,6 +548,14 @@ async function addPermissionsFromSla(sla) {
 							method: 'POST'
 						}
 					}));
+					proms.push(updateContainerPermissions({
+						name: localContainerName,
+						route: {
+							target: datasourceEndpoint.hostname,
+							path: '/' + datasourceName,
+							method: 'POST'
+						}
+					}));
 				}
 
 				proms.push(updateContainerPermissions({
