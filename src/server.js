@@ -1,40 +1,39 @@
 /*jshint esversion: 6 */
 
 const Config = require('./config.json');
-//setup dev env
-const DATABOX_DEV = process.env.DATABOX_DEV === '1';
 
-
+const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const express = require('express');
 const bodyParser = require('body-parser');
-const request = require('request');
 const databoxRequestPromise = require('./lib/databox-request-promise.js');
-const databoxAgent = require('./lib/databox-https-agent.js');
 const url = require('url');
 const databox = require('node-databox');
 
-const app = express();
-
 module.exports = {
 	proxies: {},
-	app: app,
-	launch: function (port, conman, httpsHelper) {
-
-		const server = http.createServer(app);
-		const installingApps = {};
-
+	launch: function (conman) {
 		//Always proxy to the local store, app UI deals with remote stores
 		this.proxies.store = Config.storeUrl_dev;
 
+		const appHttp = express();
+		appHttp.use(express.static('src/www/http'));
+		appHttp.use(express.static('src/www/shared'));
+		appHttp.get('/cert.pem', (req, res) => {
+			res.contentType('application/x-pem-file');
+			res.sendFile('/certs/containerManager.crt');
+		});
+		const serverHttp = http.createServer(appHttp);
+		serverHttp.listen(Config.portHttp);
 
-		app.enable('trust proxy');
-		app.set('views', 'src/www');
-		app.set('view engine', 'pug');
-		app.use(express.static('src/www'));
 
-		app.use((req, res, next) => {
+		const appHttps = express();
+		appHttps.enable('trust proxy');
+		appHttps.use(express.static('src/www/https'));
+		appHttps.use(express.static('src/www/shared'));
+
+		appHttps.use((req, res, next) => {
 			const firstPart = req.path.split('/')[1];
 			if (firstPart in this.proxies) {
 				const replacement = this.proxies[firstPart];
@@ -85,16 +84,16 @@ module.exports = {
 		});
 
 		// Needs to be after the proxy
-		app.use(bodyParser.json());
-		app.use(bodyParser.urlencoded({extended: false}));
+		appHttps.use(bodyParser.json());
+		appHttps.use(bodyParser.urlencoded({extended: false}));
 
-		app.get('/api/datasource/list', (req, res) => {
+		appHttps.get('/api/datasource/list', (req, res) => {
 			databoxRequestPromise({uri: 'https://arbiter:8080/cat'})
 				.then((request) => {
 					console.log(JSON.stringify(request));
 					let body = [];
 					request
-						.on('error', (error) => {
+						.on('error', () => {
 							res.header('Access-Control-Allow-Origin', '*');
 							res.header('Access-Control-Allow-Credentials', true);
 							res.json([]);
@@ -143,18 +142,11 @@ module.exports = {
 								}
 								return Promise.all(promises)
 									.then(results => {
-										let datasources = [];
+										const datasources = [];
 										for (const result of results) {
 											if ('items' in result) {
 												for (const item of result.items) {
 													datasources.push(item);
-													// if ('item-metadata' in item) {
-													// 	for(const metadataItem of item['item-metadata']) {
-													// 		if(metadataItem.rel === '') {
-													// 			datasources.push(item);
-													// 		}
-													// 	}
-													// }
 												}
 											}
 										}
@@ -163,7 +155,7 @@ module.exports = {
 										res.header('Access-Control-Allow-Credentials', true);
 										res.json(datasources);
 									})
-									.catch(function (error) {
+									.catch((error) => {
 										console.log(error);
 										res.header('Access-Control-Allow-Origin', '*');
 										res.header('Access-Control-Allow-Credentials', true);
@@ -174,124 +166,66 @@ module.exports = {
 				});
 		});
 
-		app.get('/api/installed/list', (req, res) => {
-			conman.listContainers()
-				.then((containers) => {
+		appHttps.get('/api/installed/list', (req, res) => {
+			conman.listServices()
+				.then((services) => {
+					console.log(services);
 					let results = [];
-					for (const container of containers) {
-						const name = container.Labels['com.docker.swarm.service.name'];
-						if (results.indexOf(name) === -1) {
-							results.push(name);
-						}
+					for (const service of services) {
+						const name = service.Spec.Name;
+						results.push(name);
 					}
 
 					res.header('Access-Control-Allow-Origin', '*');
 					res.header('Access-Control-Allow-Credentials', true);
+					console.log(results);
 					res.json(results);
-				});
-
-		});
-
-		app.get('/api/:type/list', (req, res) => {
-			conman.listContainers()
-				.then((containers) => {
-					let results = {};
-					for (const container of containers) {
-						if (req.params.type === 'all'
-							|| container.Labels['databox.type'] === req.params.type
-							|| (req.params.type === 'system'
-								&& container.Labels['databox.type'] !== 'app'
-								&& container.Labels['databox.type'] !== 'driver'
-								&& container.Labels['databox.type'] !== 'store')) {
-							const name = container.Labels['com.docker.swarm.service.name'];
-							if (results.hasOwnProperty(name)) {
-								const existing = results[name];
-								if (existing.Created < container.Created) {
-									results[name] = container;
-								}
-							}
-							else {
-								results[name] = container;
-							}
-
-						}
-					}
-
+				})
+				.catch((error) => {
+					console.log(error);
 					res.header('Access-Control-Allow-Origin', '*');
 					res.header('Access-Control-Allow-Credentials', true);
-					res.json(Object.keys(results).map(key => results[key]));
+					res.json(error);
 				});
 		});
 
-		app.get('/list-apps', (req, res) => {
-			let names = [];
-			let result = [];
-
-			conman.listContainers()
-				.then((containers) => {
-					for (let container of containers) {
-						let name = container.Names[0].substr(1).split('.')[0];
-						names.push(name);
-						result.push({
-							name: name,
-							container_id: container.Id,
-							type: container.Labels['databox.type'] === undefined ? 'app' : container.Labels['databox.type'],
-							status: container.State
-						});
+		appHttps.get('/api/:type/list', (req, res) => {
+			conman.listServices(req.params.type)
+				.then((services) => {
+					let proms = [];
+					for (const service of services) {
+						const name = service.Spec.Name;
+						proms.push(conman.listTasks(name)
+							.then((tasks) => {
+								let result = {
+									name: name,
+									type: service.Spec.Labels['databox.type'],
+								};
+								if (tasks.length > 0) {
+									result.desiredState = tasks[0].DesiredState;
+									result.state = tasks[0].Status.State;
+									result.status = tasks[0].Status.Message;
+								}
+								return result;
+							}));
 					}
 
-					for (let installingApp in installingApps) {
-						if (names.indexOf(installingApp) === -1) {
-							names.push(installingApp);
-							result.push({
-								name: installingApp,
-								type: installingApps[installingApp],
-								status: 'installing'
-							});
-						}
-					}
-
-					const options = {'url': '', 'method': 'GET'};
-
-					//Always use local store, app UI deals with remote stores
-					options.url = Config.storeUrl_dev + '/app/list';
-
-					return new Promise((resolve, reject) => {
-						request(options, (error, response, body) => {
-							if (error) {
-								console.log("Error: " + options.url);
-								reject(error);
-								return;
-							}
-
-							resolve(JSON.parse(body).apps);
-						});
-
-					});
+					return Promise.all(proms);
 				})
-				.then((apps) => {
-					for (let app of apps) {
-						if (names.indexOf(app.manifest.name) === -1) {
-							names.push(app.manifest.name);
-							result.push({
-								name: app.manifest.name,
-								type: app.manifest['databox-type'] === undefined ? 'app' : app.manifest['databox-type'],
-								status: 'uninstalled',
-								author: app.manifest.author
-							});
-						}
-					}
-
-					res.json(result);
+				.then((tasks) => {
+					res.header('Access-Control-Allow-Origin', '*');
+					res.header('Access-Control-Allow-Credentials', true);
+					res.json(tasks);
 				})
-				.catch((err) => {
-					console.log("[Error] ", err);
-					res.json(err);
+				.catch((error) => {
+					console.log(error);
+					res.header('Access-Control-Allow-Origin', '*');
+					res.header('Access-Control-Allow-Credentials', true);
+					res.json(error);
 				});
-
 		});
 
-		app.options('/api/install', (req, res) => {
+		appHttps.options('/api/install', (req, res) => {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Credentials', true);
 			res.header('Access-Control-Allow-Methods', 'POST');
@@ -300,16 +234,14 @@ module.exports = {
 		});
 
 		const jsonParser = bodyParser.json();
-		app.post('/api/install', jsonParser, (req, res) => {
+		appHttps.post('/api/install', jsonParser, (req, res) => {
 			const sla = req.body;
 			console.log(sla);
-			installingApps[sla.name] = sla['databox-type'] === undefined ? 'app' : sla['databox-type'];
 
 			conman.install(sla)
 				.then((config) => {
 					console.log('[' + sla.name + '] Installed', config);
 					for (const name of config) {
-						delete installingApps[name];
 						this.proxies[name] = name + ':8080';
 						console.log("Proxy added for ", name)
 					}
@@ -323,7 +255,7 @@ module.exports = {
 				});
 		});
 
-		app.options('/api/restart', (req, res) => {
+		appHttps.options('/api/restart', (req, res) => {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Credentials', true);
 			res.header('Access-Control-Allow-Methods', 'POST');
@@ -331,7 +263,7 @@ module.exports = {
 			res.json({status: 200, msg: "Success"});
 		});
 
-		app.post('/api/restart', (req, res) => {
+		appHttps.post('/api/restart', (req, res) => {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Credentials', true);
 			conman.restart(req.body.id)
@@ -346,7 +278,7 @@ module.exports = {
 		});
 
 
-		app.options('/api/uninstall', (req, res) => {
+		appHttps.options('/api/uninstall', (req, res) => {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Credentials', true);
 			res.header('Access-Control-Allow-Methods', 'POST');
@@ -354,7 +286,7 @@ module.exports = {
 			res.json({status: 200, msg: "Success"});
 		});
 
-		app.post('/api/uninstall', (req, res) => {
+		appHttps.post('/api/uninstall', (req, res) => {
 			//console.log("Uninstalling " + req.body.id);
 			const name = req.body.id;
 			res.header('Access-Control-Allow-Origin', '*');
@@ -371,6 +303,9 @@ module.exports = {
 				});
 		});
 
-		server.listen(port);
+		const certificate = fs.readFileSync('/certs/container-manager.pem');
+		const credentials = {key: certificate, cert: certificate};
+		const serverHttps = https.createServer(credentials, appHttps);
+		serverHttps.listen(Config.portHttps);
 	}
 };

@@ -5,6 +5,7 @@
 	"storeUrl_dev": "http://app-server:8181",
 	"registryUrl_sdk": "registry.iotdatabox.com/",
 	"storeUrl_sdk": "https://store.iotdatabox.com",
-	"serverPort": 8989,
+	"portHttp": 8448,
+	"portHttps": 8989,
 	"localAppStoreName":"app-server"
 }
