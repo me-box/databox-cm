@@ -202,10 +202,11 @@ const install = async function (sla) {
 					.catch((err) => {
 						console.log("[ERROR] creating dependent store service ", dependentStoreConfig, err)
 					});
-
-					//TODO wait for store to start
 			}
 
+			//Give the stores a bit of time to startup
+			function wait () { return new Promise( (resolve,reject)=>{ setTimeout(resolve,5000)} )};
+			await wait();
 		}
 		console.log("[CM] creating service " + containerConfig.Name);
 		await docker.createService(containerConfig)
