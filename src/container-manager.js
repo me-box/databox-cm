@@ -81,28 +81,36 @@ exports.setHttpsHelper = function (helper) {
 const zmq = require('zeromq')
 const zmq_keys = zmq.zmqCurveKeypair();
 
-//write the /run/secrets/ZMQ_PUBLIC_KEY for uses in the CM
-if (!fs.existsSync('/run/secrets/')) fs.mkdirSync('/run/secrets/');
-try {
-fs.writeFileSync('/run/secrets/ZMQ_PUBLIC_KEY',Buffer.from(zmq_keys.public));
-} catch (err) {
-	console.log("Error witting ZMQ_PUBLIC_KEY:", err);
-}
-docker.createSecret({
-	"Name": "databox_ZMQ_PUBLIC_KEY",
-	"Data": Buffer.from(zmq_keys.public).toString('base64')
+docker.getSecret('databox_ZMQ_SECRET_KEY').inspect().then((key) => {
+	console.log("ZMQ_SECRET_KEY exists doing nothing!!", key);
 })
-.catch((err) => {
-	console.log('[ERROR] creating secret databox_ZMQ_PUBLIC_KEY', err)
+.catch(()=>{
+	console.log("ZMQ_SECRET_KEY not yet created making it!!")
+	//write the /run/secrets/ZMQ_PUBLIC_KEY for uses in the CM
+	if (!fs.existsSync('/run/secrets/')) fs.mkdirSync('/run/secrets/');
+	try {
+		fs.writeFileSync('/run/secrets/ZMQ_PUBLIC_KEY',Buffer.from(zmq_keys.public));
+	} catch (err) {
+		console.log("Error witting ZMQ_PUBLIC_KEY:", err);
+	}
+
+	docker.createSecret({
+		"Name": "databox_ZMQ_PUBLIC_KEY",
+		"Data": Buffer.from(zmq_keys.public).toString('base64')
+	})
+	.catch((err) => {
+		console.log('[ERROR] creating secret databox_ZMQ_PUBLIC_KEY', err)
+	})
+
+	docker.createSecret({
+		"Name": "databox_ZMQ_SECRET_KEY",
+		"Data": Buffer.from(zmq_keys.secret).toString('base64')
+	})
+	.catch((err) => {
+		console.log('[ERROR] creating secret databox_ZMQ_SECRET_KEY', err)
+	})
 })
 
-docker.createSecret({
-	"Name": "databox_ZMQ_SECRET_KEY",
-	"Data": Buffer.from(zmq_keys.secret).toString('base64')
-})
-.catch((err) => {
-	console.log('[ERROR] creating secret databox_ZMQ_SECRET_KEY', err)
-})
 
 
 const install = async function (sla) {
