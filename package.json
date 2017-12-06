@@ -1,6 +1,6 @@
 {
   "name": "container-manager",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Databox OS container manager and dashboard server",
   "scripts": {
     "test": "./node_modules/mocha/bin/mocha",
@@ -39,7 +39,7 @@
     "modclean": "^2.1.0",
     "nedb": "^1.8.0",
     "node-forge": "^0.6.45",
-    "node-databox": "0.6.0-rc5",
+    "node-databox": "0.6.0",
     "promise-retry": "^1.1.1",
     "request": "^2.69.0",
     "selfsigned": "^1.8.0",
