@@ -202,9 +202,18 @@ module.exports = {
 									type: service.Spec.Labels['databox.type'],
 								};
 								if (tasks.length > 0) {
-									result.desiredState = tasks[0].DesiredState;
-									result.state = tasks[0].Status.State;
-									result.status = tasks[0].Status.Message;
+									let lastestTask = tasks[0];
+									let lastestTime = new Date(lastestTask.UpdatedAt);
+									for(const task of tasks) {
+										let time = new Date(task.UpdatedAt);
+										if(time > lastestTime) {
+											lastestTask = task;
+											lastestTime = time;
+										}
+									}
+									result.desiredState = lastestTask.DesiredState;
+									result.state = lastestTask.Status.State;
+									result.status = lastestTask.Status.Message;
 								}
 								return result;
 							}));
