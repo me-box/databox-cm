@@ -66,6 +66,49 @@ exports.setHttpsHelper = function (helper) {
 	});
 };
 
+//
+// Generate ZMQ keys
+// { public: 'SOME_PUB_KEY', secret: 'SOME_PRIVATE_KEY' }
+//
+// pub key goes to apps
+// privet key is shared with stores
+//
+// TODO: All instances of core-store share keys this is not ideal!
+const zmq = require('zeromq')
+const zmq_keys = zmq.zmqCurveKeypair();
+
+docker.getSecret('databox_ZMQ_SECRET_KEY').inspect().then((key) => {
+	console.log("ZMQ_SECRET_KEY exists doing nothing!!", key);
+})
+.catch(()=>{
+	console.log("ZMQ_SECRET_KEY not yet created making it!!")
+	//write the /run/secrets/ZMQ_PUBLIC_KEY for uses in the CM
+	if (!fs.existsSync('/run/secrets/')) fs.mkdirSync('/run/secrets/');
+	try {
+		fs.writeFileSync('/run/secrets/ZMQ_PUBLIC_KEY',Buffer.from(zmq_keys.public));
+	} catch (err) {
+		console.log("Error witting ZMQ_PUBLIC_KEY:", err);
+	}
+
+	docker.createSecret({
+		"Name": "databox_ZMQ_PUBLIC_KEY",
+		"Data": Buffer.from(zmq_keys.public).toString('base64')
+	})
+	.catch((err) => {
+		console.log('[ERROR] creating secret databox_ZMQ_PUBLIC_KEY', err)
+	})
+
+	docker.createSecret({
+		"Name": "databox_ZMQ_SECRET_KEY",
+		"Data": Buffer.from(zmq_keys.secret).toString('base64')
+	})
+	.catch((err) => {
+		console.log('[ERROR] creating secret databox_ZMQ_SECRET_KEY', err)
+	})
+})
+
+
+
 const install = async function (sla) {
 	return new Promise(async (resolve, reject) => {
 
@@ -157,6 +200,9 @@ const install = async function (sla) {
 					});
 			}
 
+			//Give the stores a bit of time to startup
+			function wait () { return new Promise( (resolve,reject)=>{ setTimeout(resolve,5000)} )};
+			await wait();
 		}
 		console.log("[CM] creating service " + containerConfig.Name);
 		await docker.createService(containerConfig)
@@ -214,6 +260,7 @@ function removeSecret(name) {
 }
 
 const createSecrets = async function (config, sla) {
+
 	function addSecret(filename, name, id) {
 		config.TaskTemplate.ContainerSpec.secrets.push({
 			"SecretName": name, "SecretID": id, "File": {
@@ -233,32 +280,44 @@ const createSecrets = async function (config, sla) {
 			},
 			"Data": data
 		})
-			.then((secret) => {
-				addSecret(filename, name, secret.id);
-				return {"name": name, "id": secret.id};
-			})
-			.catch((err) => {
-				console.log('[ERROR] creating secret ' + name, err)
-			});
+		.then((secret) => {
+			addSecret(filename, name, secret.id);
+			return {"name": name, "id": secret.id};
+		})
+		.catch((err) => {
+			console.log('[ERROR] creating secret ' + name, err)
+		});
 	}
 
 	console.log("createSecrets");
 
 	//HTTPS certs Json
-	//TODO remove this!!
 	const certJson = await httpsHelper.createClientCert(sla.localContainerName);
 	const parsedCert = JSON.parse(certJson);
 	const pem = parsedCert.clientprivate + parsedCert.clientpublic + parsedCert.clientcert;
+
 	const arbiterToken = await generateArbiterToken(sla.localContainerName);
-	await Promise.all([
+
+	let proms = [
 		docker.getSecret('databox_DATABOX_ROOT_CA').inspect().then((rootCA) => {
 			addSecret("DATABOX_ROOT_CA", rootCA.Spec.Name, rootCA.ID)
+		}),
+		docker.getSecret('databox_ZMQ_PUBLIC_KEY').inspect().then((key) => {
+			addSecret("ZMQ_PUBLIC_KEY", key.Spec.Name, key.ID)
 		}),
 		createSecret(sla.localContainerName.toUpperCase() + '_PEM', Buffer.from(certJson).toString('base64'), "DATABOX_PEM"),
 		createSecret(sla.localContainerName.toUpperCase() + '.pem', Buffer.from(pem).toString('base64'), "DATABOX.pem"),
 		createSecret(sla.localContainerName.toUpperCase() + '_KEY', arbiterToken, "ARBITER_TOKEN"),
 		updateArbiter({name: sla.localContainerName, key: arbiterToken, type: sla['databox-type']})
-	]);
+	]
+
+	if(sla['databox-type'] == 'store') {
+		proms.push(docker.getSecret('databox_ZMQ_SECRET_KEY').inspect().then((key) => {
+			addSecret("ZMQ_SECRET_KEY", key.Spec.Name, key.ID)
+		}));
+	}
+
+	await Promise.all(proms);
 
 	return config
 };
@@ -305,10 +364,16 @@ const driverConfig = function (config, sla, network) {
 			//TODO remove this
 			let storeName = sla.name + "-" + sla['resource-requirements']['store'] + ARCH;
 			driver.Env.push("DATABOX_STORE_ENDPOINT=https://" + storeName + ":8080");
+			driver.Env.push("DATABOX_ZMQ_ENDPOINT=tcp://" + storeName + ":5555");
+			driver.Env.push("DATABOX_ZMQ_DEALER_ENDPOINT=tcp://" + storeName + ":5556");
 		} else {
 			for (storeType of sla['resource-requirements']['store']) {
 				let storeName = sla.name + "-" + storeType + ARCH;
-				driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=https://" + storeName + ":8080");
+				if(storeType == 'core-store') {
+					driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=tcp://" + storeName + ":5555");
+				} else {
+					driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=https://" + storeName + ":8080");
+				}
 			}
 		}
 	}
@@ -360,14 +425,21 @@ const appConfig = function (config, sla, network) {
 	}
 
 	if (sla['resource-requirements'] && sla['resource-requirements']['store']) {
+
 		if (sla['resource-requirements']['store'].length === 1) {
 			//TODO remove this
 			let storeName = sla.name + "-" + sla['resource-requirements']['store'] + ARCH;
 			app.Env.push("DATABOX_STORE_ENDPOINT=https://" + storeName + ":8080");
+			app.Env.push("DATABOX_ZMQ_ENDPOINT=tcp://" + storeName + ":5555");
+			app.Env.push("DATABOX_ZMQ_DEALER_ENDPOINT=tcp://" + storeName + ":5556");
 		} else {
 			for (storeType of sla['resource-requirements']['store']) {
 				let storeName = sla.name + "-" + storeType + ARCH;
-				app.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=https://" + storeName + ":8080");
+				if(storeType == 'core-store') {
+					driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=tcp://" + storeName + ":5555");
+				} else {
+					driver.Env.push("DATABOX_" + storeType.toUpperCase().replace('-', '_') + "_ENDPOINT=https://" + storeName + ":8080");
+				}
 			}
 		}
 	}
@@ -481,6 +553,14 @@ async function addPermissionsFromSla(sla) {
 						route: {
 							target: datasourceEndpoint.hostname,
 							path: '/' + datasourceName + '/*',
+							method: 'POST'
+						}
+					}));
+					proms.push(updateContainerPermissions({
+						name: localContainerName,
+						route: {
+							target: datasourceEndpoint.hostname,
+							path: '/' + datasourceName,
 							method: 'POST'
 						}
 					}));
