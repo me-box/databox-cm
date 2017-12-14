@@ -3,13 +3,21 @@
 const forge = require('node-forge');
 const fs = require('fs');
 
-const attrs = [{name: 'commonName', value: 'databox'}];
+const attrs = [
+	{name: 'commonName', value: 'Databox'},
+	{name: 'organizationName', value: 'University of Nottingham'},
+	{name: 'countryName', value: 'UK'},
+	{shortName: 'ST', value: 'Nottinghamshire'},
+	{name: 'localityName', value: 'Nottingham'},
+	{shortName: 'OU', value: 'Mixed Reality Lab'}
+];
+
 let rootPems;
 
 const devCertPath = '/run/secrets/DATABOX_CM.pem';
 
 //Generate the CM root cert at startup.
-//If in DEV mode we need to use the same certs at restart because the docker demon has to trust the container manger CA to verify 
+//If in DEV mode we need to use the same certs at restart because the docker demon has to trust the container manger CA to verify
 //the local registry. If we are not in dev mode then the certs are generated at each restart of the container manger.
 const init = function () {
 	return new Promise((resolve, reject) => {
@@ -24,7 +32,7 @@ const init = function () {
 	});
 };
 
-//based on code extracted from the selfsigned module Licence MIT 
+//based on code extracted from the selfsigned module Licence MIT
 const createClientCert = async function (commonName) {
 
 	function toPositiveHex(hexString) {
@@ -48,7 +56,14 @@ const createClientCert = async function (commonName) {
 		clientcert.validity.notAfter = new Date();
 		clientcert.validity.notAfter.setFullYear(clientcert.validity.notBefore.getFullYear() + 10);
 
-		let clientAttrs = [{name: 'commonName', value: commonName}];
+		const clientAttrs = [
+			{name: 'commonName', value: commonName},
+			{name: 'organizationName', value: 'University of Nottingham'},
+			{name: 'countryName', value: 'UK'},
+			{shortName: 'ST', value: 'Nottinghamshire'},
+			{name: 'localityName', value: 'Nottingham'},
+			{shortName: 'OU', value: 'Mixed Reality Lab'}
+		];
 
 		clientcert.setSubject(clientAttrs);
 		// Set the issuer to the parent key
