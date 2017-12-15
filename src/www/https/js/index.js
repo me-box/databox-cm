@@ -5,10 +5,10 @@ let stores = [];
 const localStoreName = "Local Store";
 const sensorDriver = 'driver-sensingkit';
 const isApp = typeof cordova !== 'undefined';
-let databoxURL = 'https://localhost:8989/';
+let databoxURL = 'https://localhost/';
 if (!isApp) {
 	const url = new URL(window.location);
-	databoxURL = url.protocol + '//' + url.hostname + ':8989' + '/';
+	databoxURL = url.protocol + '//' + url.hostname + '/';
 	document.getElementById('sensing').style.display = 'none';
 }
 
@@ -131,7 +131,7 @@ function connect(retry) {
 			}
 			const url = new URL(value);
 			if (!url.port) {
-				url.port = '8989';
+				url.port = '443';
 			}
 			localStorage.setItem('databoxURL', url.toString());
 		}
@@ -327,7 +327,7 @@ function showConnect(error) {
 	const stored = localStorage.getItem('databoxURL');
 	if (stored) {
 		const url = new URL(stored);
-		if (url.port !== '8989') {
+		if (url.port !== '443') {
 			field.value = url.host;
 		} else {
 			field.value = url.hostname;
