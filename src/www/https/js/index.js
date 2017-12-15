@@ -160,7 +160,7 @@ function connect(retry) {
 					hostlabel.parentElement.style.cursor = 'pointer';
 				}
 
-				url.protocol = 'http';
+				url.protocol = 'https';
 				url.port = '8181';
 				stores = [{
 					"name": localStoreName,
@@ -237,7 +237,7 @@ function listApps(type) {
 					app.displayName = app.manifest.name.replace('databox', '').replace('driver-', '').replace('app-', '').split('-').join(' ').trim();
 					app.manifest.displayName = app.displayName;
 					if (store.name === localStoreName) {
-						app.manifest.storeUrl = 'http://localhost:8181/app/get/?name=' + app.manifest.name;
+						app.manifest.storeUrl = 'https://localhost:8181/app/get/?name=' + app.manifest.name;
 					} else {
 						app.manifest.storeUrl = app.url;
 					}
