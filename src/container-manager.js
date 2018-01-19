@@ -242,20 +242,21 @@ exports.uninstall = uninstall;
 const restart = async function (name) {
 	let old_ip;
 
-	const _wait_restart = function(sname, old_ip) {
-		console.log("[restart] wait " + sname + " to restart");
+	const _wait_restart = function(name, old_ip) {
+		//console.log("[restart] wait " + name + " to restart");
 		return docker.listContainers({
 			all: true,
-			filters: {"label": ["com.docker.swarm.service.name=" + sname]}
+			filters: {"label": ["com.docker.swarm.service.name=" + name]}
 		})
 			.then((containers) => {
 				if (containers.length !== 0) {
 					let new_ip;
 
 					for (const containerInfo of containers) {
-						console.log(JSON.stringify(containerInfo));
+						//console.log(JSON.stringify(containerInfo));
 						for (var net_name in containerInfo.NetworkSettings.Networks) {
-							if (net_name.includes(sname)) {
+							let service_name = name.replace("-core-store", "").replace("-store-json", "");
+							if (net_name.includes(service_name)) {
 								new_ip = containerInfo.NetworkSettings.Networks[net_name].IPAMConfig.IPv4Address;
 							}
 						}
@@ -263,15 +264,16 @@ const restart = async function (name) {
 
 					if (new_ip) {
 						if (old_ip === new_ip) {
-							console.log("[restart] IP of service " + sname + " not changed");
+							console.log("[restart] IP of service " + name + " not changed");
 						} else {
-							console.log("[restart] IP of service " + sname + ": " + old_ip + " -> " + new_ip);
+							console.log("[restart] IP of service " + name + ": " + old_ip + " -> " + new_ip);
+							return databoxNet.serviceRestart(name, old_ip, new_ip);
 						}
 					} else {
-						return setTimeout(() => _wait_restart(sname, old_ip), 500);
+						return setTimeout(() => _wait_restart(name, old_ip), 500);
 					}
 				} else {
-					return setTimeout(() => _wait_restart(sname, old_ip), 500);
+					return setTimeout(() => _wait_restart(name, old_ip), 500);
 				}
 			});
 	};
@@ -283,9 +285,10 @@ const restart = async function (name) {
 		.then((containers) => {
 			const proms = [];
 			for (const containerInfo of containers) {
-				console.debug(JSON.stringify(containerInfo));
+				//console.log(JSON.stringify(containerInfo));
 				for (var net_name in containerInfo.NetworkSettings.Networks) {
-					if (net_name.includes(name)) {
+					let service_name = name.replace("-core-store", "").replace("-store-json", "");
+					if (net_name.includes(service_name)) {
 						old_ip = containerInfo.NetworkSettings.Networks[net_name].IPAMConfig.IPv4Address;
 					}
 				}
