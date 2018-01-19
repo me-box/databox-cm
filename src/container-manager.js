@@ -47,9 +47,8 @@ let getRegistryUrlFromSLA = function (sla) {
 				registryUrl = sla.registry + "/";
 			} else {
 				//default to databox systems
-				//console.log("Using databoxsystems registry");
-				//registryUrl = "databoxsystems/";
-				registryUrl = "";
+				console.log("Using databoxsystems registry");
+				registryUrl = "databoxsystems/";
 			}
 		}
 	}
