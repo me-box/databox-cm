@@ -47,8 +47,9 @@ let getRegistryUrlFromSLA = function (sla) {
 				registryUrl = sla.registry + "/";
 			} else {
 				//default to databox systems
-				console.log("Using databoxsystems registry");
-				registryUrl = "databoxsystems/";
+				//console.log("Using databoxsystems registry");
+				//registryUrl = "databoxsystems/";
+				registryUrl = "";
 			}
 		}
 	}
@@ -239,6 +240,42 @@ const uninstall = async function (name) {
 exports.uninstall = uninstall;
 
 const restart = async function (name) {
+	let old_ip;
+
+	const _wait_restart = function(sname, old_ip) {
+		console.log("[restart] wait " + sname + " to restart");
+		return docker.listContainers({
+			all: true,
+			filters: {"label": ["com.docker.swarm.service.name=" + sname]}
+		})
+			.then((containers) => {
+				if (containers.length !== 0) {
+					let new_ip;
+
+					for (const containerInfo of containers) {
+						console.log(JSON.stringify(containerInfo));
+						for (var net_name in containerInfo.NetworkSettings.Networks) {
+							if (net_name.includes(sname)) {
+								new_ip = containerInfo.NetworkSettings.Networks[net_name].IPAMConfig.IPv4Address;
+							}
+						}
+					}
+
+					if (new_ip) {
+						if (old_ip === new_ip) {
+							console.log("[restart] IP of service " + sname + " not changed");
+						} else {
+							console.log("[restart] IP of service " + sname + ": " + old_ip + " -> " + new_ip);
+						}
+					} else {
+						return setTimeout(() => _wait_restart(sname, old_ip), 500);
+					}
+				} else {
+					return setTimeout(() => _wait_restart(sname, old_ip), 500);
+				}
+			});
+	};
+
 	return docker.listContainers({
 		all: true,
 		filters: {"label": ["com.docker.swarm.service.name=" + name]}
@@ -246,10 +283,20 @@ const restart = async function (name) {
 		.then((containers) => {
 			const proms = [];
 			for (const containerInfo of containers) {
+				console.debug(JSON.stringify(containerInfo));
+				for (var net_name in containerInfo.NetworkSettings.Networks) {
+					if (net_name.includes(name)) {
+						old_ip = containerInfo.NetworkSettings.Networks[net_name].IPAMConfig.IPv4Address;
+					}
+				}
+
 				const container = docker.getContainer(containerInfo.Id);
 				proms.push(container.remove({force: true}))
 			}
 			return Promise.all(proms);
+		})
+		.then(() => {
+			return _wait_restart(name, old_ip);
 		});
 };
 exports.restart = restart;
