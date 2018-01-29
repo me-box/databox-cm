@@ -2,6 +2,7 @@
 
 const conman = require('./container-manager.js');
 const httpsHelper = require('./include/container-manger-https-helper');
+const authToken = require('../certs/container-mananager-auth.json');
 
 let containerMangerUIServer = null;
 
@@ -25,6 +26,7 @@ httpsHelper.init()
 		});
 
 		console.log("Starting UI Server!!");
+		console.log("Password = " + authToken.token);
 		return containerMangerUIServer.launch(conman);
 	})
 	.catch(err => {
