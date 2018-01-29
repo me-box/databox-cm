@@ -239,6 +239,44 @@ const uninstall = async function (name) {
 exports.uninstall = uninstall;
 
 const restart = async function (name) {
+	let old_ip;
+
+	const _wait_restart = function(name, old_ip) {
+		//console.log("[restart] wait " + name + " to restart");
+		return docker.listContainers({
+			all: true,
+			filters: {"label": ["com.docker.swarm.service.name=" + name]}
+		})
+			.then((containers) => {
+				if (containers.length !== 0) {
+					let new_ip;
+
+					for (const containerInfo of containers) {
+						//console.log(JSON.stringify(containerInfo));
+						for (var net_name in containerInfo.NetworkSettings.Networks) {
+							let service_name = name.replace("-core-store", "").replace("-store-json", "");
+							if (net_name.includes(service_name)) {
+								new_ip = containerInfo.NetworkSettings.Networks[net_name].IPAMConfig.IPv4Address;
+							}
+						}
+					}
+
+					if (new_ip) {
+						if (old_ip === new_ip) {
+							console.log("[restart] IP of service " + name + " not changed");
+						} else {
+							console.log("[restart] IP of service " + name + ": " + old_ip + " -> " + new_ip);
+							return databoxNet.serviceRestart(name, old_ip, new_ip);
+						}
+					} else {
+						return setTimeout(() => _wait_restart(name, old_ip), 500);
+					}
+				} else {
+					return setTimeout(() => _wait_restart(name, old_ip), 500);
+				}
+			});
+	};
+
 	return docker.listContainers({
 		all: true,
 		filters: {"label": ["com.docker.swarm.service.name=" + name]}
@@ -246,10 +284,21 @@ const restart = async function (name) {
 		.then((containers) => {
 			const proms = [];
 			for (const containerInfo of containers) {
+				//console.log(JSON.stringify(containerInfo));
+				for (var net_name in containerInfo.NetworkSettings.Networks) {
+					let service_name = name.replace("-core-store", "").replace("-store-json", "");
+					if (net_name.includes(service_name)) {
+						old_ip = containerInfo.NetworkSettings.Networks[net_name].IPAMConfig.IPv4Address;
+					}
+				}
+
 				const container = docker.getContainer(containerInfo.Id);
 				proms.push(container.remove({force: true}))
 			}
 			return Promise.all(proms);
+		})
+		.then(() => {
+			return _wait_restart(name, old_ip);
 		});
 };
 exports.restart = restart;
@@ -802,26 +851,19 @@ const saveSLA = function (sla) {
 	return db.putSLA(sla.name, sla);
 };
 
-exports.restoreContainers = function (slas) {
+exports.reloadInstalledComponents = function () {
 	return new Promise((resolve, reject) => {
-		let infos = [];
-		let result = Promise.resolve();
-		slas.forEach(sla => {
-			console.log("Launching Container:: " + sla.name);
-			result = result.then((info) => {
-				infos.push(info);
-				return launchContainer(sla);
+		getActiveSLAs()
+		.then((slas)=>{
+			slas.forEach(sla => {
+				console.log("Launching previously installed component:: " + sla.name);
+				install(sla)
 			});
-		});
-		result = result.then((info) => {
-			infos.push(info);
-			infos.shift(); //remove unneeded first item.
-			resolve(infos);
-		});
-		return result;
+			resolve(slas)
+		})
 	});
-};
+}
 
-exports.getActiveSLAs = function () {
+let getActiveSLAs = function () {
 	return db.getAllSLAs();
 };

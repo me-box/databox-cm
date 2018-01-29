@@ -177,6 +177,38 @@ module.exports = function(docker) {
 
     };
 
+
+    const serviceRestart = async function(sname, old_ip, new_ip) {
+        return new Promise((resolve, reject) => {
+            const data = {
+                name: sname,
+                old_ip: old_ip,
+                new_ip: new_ip,
+            };
+
+            const options = {
+                url: DATABOX_NETWORK_ENDPOINT + "/restart",
+                method: 'POST',
+                body: data,
+                agent: https_agent,
+                json: true,
+                headers: {
+                    'x-api-key': CM_KEY
+                }
+            };
+            request(
+                options,
+                function(err, res, body) {
+                    if (err || (res.statusCode < 200 || res.statusCode >= 300)) {
+                        reject(err || body || "[serviceRestart] error: " + res.statusCode);
+                        return;
+                    }
+                    console.log("[serviceRestart] " + sname + " DONE");
+                    resolve();
+                });
+        });
+    }
+
     const getNetwork = async function(name, internal) {
         let config = {
             "Name": name,
@@ -363,5 +395,6 @@ module.exports = function(docker) {
     module.identifySelf     = identifySelf;
     module.networkOfService = networkOfService;
     module.postUninstall    = postUninstall;
+    module.serviceRestart   = serviceRestart;
     return module;
 };
