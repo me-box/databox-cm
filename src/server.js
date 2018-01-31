@@ -8,26 +8,36 @@ const http = require('http');
 const https = require('https');
 const express = require('express');
 const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
 const databoxRequestPromise = require('./lib/databox-request-promise.js');
 const url = require('url');
 const databox = require('node-databox');
+const crypto = require('crypto');
+const cors = require('cors');
+let sessionToken;
 
 module.exports = {
 	proxies: {},
 	launch: function (conman) {
-		function verifyToken(req, res) {
+		function authError(res) {
+			res.status(401).send("Authorization Required");
+		}
+
+		function verifyToken(req) {
 			// Grab the "Authorization" header.
 			const auth = req.get("authorization");
 			if (auth != null && auth.indexOf('Token ') === 0) {
 				const token = auth.substr(6);
-				if(token === authToken.token) {
+				if (token === authToken.token) {
 					return true;
 				}
 			}
-			res.header('Access-Control-Allow-Origin', '*');
-			res.header('Access-Control-Allow-Credentials', true);
-			res.status(401).send("Authorization Required");
+
 			return false;
+		}
+
+		function verifyCookie(req) {
+			return sessionToken && req.cookies.session === sessionToken;
 		}
 
 		//Always proxy to the local store, app UI deals with remote stores
@@ -47,8 +57,13 @@ module.exports = {
 		appHttps.enable('trust proxy');
 		appHttps.use(express.static('src/www/https'));
 		appHttps.use(express.static('src/www/http'));
-
+		appHttps.use(cors());
+		appHttps.use(cookieParser());
 		appHttps.use((req, res, next) => {
+			if (!verifyToken(req) && !verifyCookie(req)) {
+				authError(res);
+				return;
+			}
 			const firstPart = req.path.split('/')[1];
 			if (firstPart in this.proxies) {
 				const replacement = this.proxies[firstPart];
@@ -98,21 +113,30 @@ module.exports = {
 			}
 		});
 
+		appHttps.get('/api/connect', (req, res) => {
+			if (!verifyToken(req)) {
+				authError(res);
+				return;
+			}
+			if (!sessionToken) {
+				sessionToken = crypto.randomBytes(24).toString('base64');
+			}
+			res.send(sessionToken);
+		});
+
 		appHttps.get('/api/qrcode.png', (req, res) => {
-			if(!verifyToken(req, res)) {
+			if (!verifyToken(req)) {
+				authError(res);
 				return;
 			}
 			res.contentType('application/png');
 			res.sendFile('/certs/qrcode.png');
 		});
 
-		// Needs to be after the proxy
-		appHttps.use(bodyParser.json());
-		appHttps.use(bodyParser.urlencoded({extended: false}));
-
 		appHttps.get('/api/datasource/list', (req, res) => {
-			if(!verifyToken(req, res)) {
-				return
+			if (!verifyToken(req)) {
+				authError(res);
+				return;
 			}
 			databoxRequestPromise({uri: 'https://arbiter:8080/cat'})
 				.then((request) => {
@@ -120,8 +144,6 @@ module.exports = {
 					let body = [];
 					request
 						.on('error', () => {
-							res.header('Access-Control-Allow-Origin', '*');
-							res.header('Access-Control-Allow-Credentials', true);
 							res.json([]);
 						})
 						.on('data', (chunk) => {
@@ -133,20 +155,20 @@ module.exports = {
 								const promises = [];
 								for (const item of json.items) {
 									promises.push(new Promise((resolve, reject) => {
-										if(item.href.includes('tcp://')) {
+										if (item.href.includes('tcp://')) {
 											//read /cat from core-store
-											let kvc = databox.NewKeyValueClient(item.href,false);
+											let kvc = databox.NewKeyValueClient(item.href, false);
 											kvc.GetDatasourceCatalogue()
-											.then((catStr)=>{
-												kvc.zestClient.ZMQsoc.close();
-												console.log(catStr);
-												resolve(JSON.parse(catStr));
-											})
-											.catch(()=>{
-												kvc.zestClient.ZMQsoc.close();
-												console.log("Error /api/datasource/list can't get from " + item.href);
-												resolve({});
-											});
+												.then((catStr) => {
+													kvc.zestClient.ZMQsoc.close();
+													console.log(catStr);
+													resolve(JSON.parse(catStr));
+												})
+												.catch(() => {
+													kvc.zestClient.ZMQsoc.close();
+													console.log("Error /api/datasource/list can't get from " + item.href);
+													resolve({});
+												});
 										} else {
 											//read /cat from store-json or other store over https
 											console.log("Read from " + item.href);
@@ -167,7 +189,7 @@ module.exports = {
 															resolve(JSON.parse(Buffer.concat(body).toString()));
 														});
 												});
-											}
+										}
 									}));
 								}
 								return Promise.all(promises)
@@ -181,14 +203,10 @@ module.exports = {
 											}
 										}
 
-										res.header('Access-Control-Allow-Origin', '*');
-										res.header('Access-Control-Allow-Credentials', true);
 										res.json(datasources);
 									})
 									.catch((error) => {
 										console.log(error);
-										res.header('Access-Control-Allow-Origin', '*');
-										res.header('Access-Control-Allow-Credentials', true);
 										res.json([]);
 									});
 							}
@@ -197,8 +215,9 @@ module.exports = {
 		});
 
 		appHttps.get('/api/installed/list', (req, res) => {
-			if(!verifyToken(req, res)) {
-				return
+			if (!verifyToken(req)) {
+				authError(res);
+				return;
 			}
 			conman.listServices()
 				.then((services) => {
@@ -209,31 +228,19 @@ module.exports = {
 						results.push(name);
 					}
 
-					res.header('Access-Control-Allow-Origin', '*');
-					res.header('Access-Control-Allow-Credentials', true);
 					console.log(results);
 					res.json(results);
 				})
 				.catch((error) => {
 					console.log(error);
-					res.header('Access-Control-Allow-Origin', '*');
-					res.header('Access-Control-Allow-Credentials', true);
 					res.json(error);
 				});
 		});
 
-		appHttps.options('/api/:type/list', (req, res) => {
-			console.log("");
-			res.header('Access-Control-Allow-Origin', '*');
-			res.header('Access-Control-Allow-Credentials', true);
-			res.header('Access-Control-Allow-Headers', 'Authorization');
-			res.header('Access-Control-Allow-Methods', 'GET');
-			res.json({status: 200, msg: "Success"});
-		});
-
 		appHttps.get('/api/:type/list', (req, res) => {
-			if(!verifyToken(req, res)) {
-				return
+			if (!verifyToken(req)) {
+				authError(res);
+				return;
 			}
 			conman.listServices(req.params.type)
 				.then((services) => {
@@ -249,9 +256,9 @@ module.exports = {
 								if (tasks.length > 0) {
 									let lastestTask = tasks[0];
 									let lastestTime = new Date(lastestTask.UpdatedAt);
-									for(const task of tasks) {
+									for (const task of tasks) {
 										let time = new Date(task.UpdatedAt);
-										if(time > lastestTime) {
+										if (time > lastestTime) {
 											lastestTask = task;
 											lastestTime = time;
 										}
@@ -267,30 +274,19 @@ module.exports = {
 					return Promise.all(proms);
 				})
 				.then((tasks) => {
-					res.header('Access-Control-Allow-Origin', '*');
-					res.header('Access-Control-Allow-Credentials', true);
 					res.json(tasks);
 				})
 				.catch((error) => {
 					console.log(error);
-					res.header('Access-Control-Allow-Origin', '*');
-					res.header('Access-Control-Allow-Credentials', true);
 					res.json(error);
 				});
 		});
 
-		appHttps.options('/api/install', (req, res) => {
-			res.header('Access-Control-Allow-Origin', '*');
-			res.header('Access-Control-Allow-Credentials', true);
-			res.header('Access-Control-Allow-Methods', 'POST');
-			res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-			res.json({status: 200, msg: "Success"});
-		});
-
 		const jsonParser = bodyParser.json();
 		appHttps.post('/api/install', jsonParser, (req, res) => {
-			if(!verifyToken(req, res)) {
-				return
+			if (!verifyToken(req)) {
+				authError(res);
+				return;
 			}
 			const sla = req.body;
 			console.log(sla);
@@ -303,8 +299,6 @@ module.exports = {
 						console.log("Proxy added for ", name)
 					}
 
-					res.header('Access-Control-Allow-Origin', '*');
-					res.header('Access-Control-Allow-Credentials', true);
 					res.json({status: 200, msg: "Success"});
 				})
 				.catch((error) => {
@@ -312,20 +306,11 @@ module.exports = {
 				});
 		});
 
-		appHttps.options('/api/restart', (req, res) => {
-			res.header('Access-Control-Allow-Origin', '*');
-			res.header('Access-Control-Allow-Credentials', true);
-			res.header('Access-Control-Allow-Methods', 'POST');
-			res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-			res.json({status: 200, msg: "Success"});
-		});
-
-		appHttps.post('/api/restart', (req, res) => {
-			if(!verifyToken(req, res)) {
-				return
+		appHttps.post('/api/restart', jsonParser, (req, res) => {
+			if (!verifyToken(req)) {
+				authError(res);
+				return;
 			}
-			res.header('Access-Control-Allow-Origin', '*');
-			res.header('Access-Control-Allow-Credentials', true);
 			conman.restart(req.body.id)
 				.then(() => {
 					res.json({status: 200, msg: "Success"});
@@ -338,22 +323,13 @@ module.exports = {
 		});
 
 
-		appHttps.options('/api/uninstall', (req, res) => {
-			res.header('Access-Control-Allow-Origin', '*');
-			res.header('Access-Control-Allow-Credentials', true);
-			res.header('Access-Control-Allow-Methods', 'POST');
-			res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-			res.json({status: 200, msg: "Success"});
-		});
-
-		appHttps.post('/api/uninstall', (req, res) => {
-			if(!verifyToken(req, res)) {
-				return
+		appHttps.post('/api/uninstall', jsonParser, (req, res) => {
+			if (!verifyToken(req)) {
+				authError(res);
+				return;
 			}
 			//console.log("Uninstalling " + req.body.id);
 			const name = req.body.id;
-			res.header('Access-Control-Allow-Origin', '*');
-			res.header('Access-Control-Allow-Credentials', true);
 			conman.uninstall(name)
 				.then(() => {
 					console.log('[' + name + '] Uninstalled');

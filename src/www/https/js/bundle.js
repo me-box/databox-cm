@@ -4,6 +4,173 @@
 },{}],2:[function(require,module,exports){
 
 },{}],3:[function(require,module,exports){
+/*!
+ * JavaScript Cookie v2.2.0
+ * https://github.com/js-cookie/js-cookie
+ *
+ * Copyright 2006, 2015 Klaus Hartl & Fagner Brack
+ * Released under the MIT license
+ */
+;(function (factory) {
+	var registeredInModuleLoader = false;
+	if (typeof define === 'function' && define.amd) {
+		define(factory);
+		registeredInModuleLoader = true;
+	}
+	if (typeof exports === 'object') {
+		module.exports = factory();
+		registeredInModuleLoader = true;
+	}
+	if (!registeredInModuleLoader) {
+		var OldCookies = window.Cookies;
+		var api = window.Cookies = factory();
+		api.noConflict = function () {
+			window.Cookies = OldCookies;
+			return api;
+		};
+	}
+}(function () {
+	function extend () {
+		var i = 0;
+		var result = {};
+		for (; i < arguments.length; i++) {
+			var attributes = arguments[ i ];
+			for (var key in attributes) {
+				result[key] = attributes[key];
+			}
+		}
+		return result;
+	}
+
+	function init (converter) {
+		function api (key, value, attributes) {
+			var result;
+			if (typeof document === 'undefined') {
+				return;
+			}
+
+			// Write
+
+			if (arguments.length > 1) {
+				attributes = extend({
+					path: '/'
+				}, api.defaults, attributes);
+
+				if (typeof attributes.expires === 'number') {
+					var expires = new Date();
+					expires.setMilliseconds(expires.getMilliseconds() + attributes.expires * 864e+5);
+					attributes.expires = expires;
+				}
+
+				// We're using "expires" because "max-age" is not supported by IE
+				attributes.expires = attributes.expires ? attributes.expires.toUTCString() : '';
+
+				try {
+					result = JSON.stringify(value);
+					if (/^[\{\[]/.test(result)) {
+						value = result;
+					}
+				} catch (e) {}
+
+				if (!converter.write) {
+					value = encodeURIComponent(String(value))
+						.replace(/%(23|24|26|2B|3A|3C|3E|3D|2F|3F|40|5B|5D|5E|60|7B|7D|7C)/g, decodeURIComponent);
+				} else {
+					value = converter.write(value, key);
+				}
+
+				key = encodeURIComponent(String(key));
+				key = key.replace(/%(23|24|26|2B|5E|60|7C)/g, decodeURIComponent);
+				key = key.replace(/[\(\)]/g, escape);
+
+				var stringifiedAttributes = '';
+
+				for (var attributeName in attributes) {
+					if (!attributes[attributeName]) {
+						continue;
+					}
+					stringifiedAttributes += '; ' + attributeName;
+					if (attributes[attributeName] === true) {
+						continue;
+					}
+					stringifiedAttributes += '=' + attributes[attributeName];
+				}
+				return (document.cookie = key + '=' + value + stringifiedAttributes);
+			}
+
+			// Read
+
+			if (!key) {
+				result = {};
+			}
+
+			// To prevent the for loop in the first place assign an empty array
+			// in case there are no cookies at all. Also prevents odd result when
+			// calling "get()"
+			var cookies = document.cookie ? document.cookie.split('; ') : [];
+			var rdecode = /(%[0-9A-Z]{2})+/g;
+			var i = 0;
+
+			for (; i < cookies.length; i++) {
+				var parts = cookies[i].split('=');
+				var cookie = parts.slice(1).join('=');
+
+				if (!this.json && cookie.charAt(0) === '"') {
+					cookie = cookie.slice(1, -1);
+				}
+
+				try {
+					var name = parts[0].replace(rdecode, decodeURIComponent);
+					cookie = converter.read ?
+						converter.read(cookie, name) : converter(cookie, name) ||
+						cookie.replace(rdecode, decodeURIComponent);
+
+					if (this.json) {
+						try {
+							cookie = JSON.parse(cookie);
+						} catch (e) {}
+					}
+
+					if (key === name) {
+						result = cookie;
+						break;
+					}
+
+					if (!key) {
+						result[name] = cookie;
+					}
+				} catch (e) {}
+			}
+
+			return result;
+		}
+
+		api.set = api;
+		api.get = function (key) {
+			return api.call(api, key);
+		};
+		api.getJSON = function () {
+			return api.apply({
+				json: true
+			}, [].slice.call(arguments));
+		};
+		api.defaults = {};
+
+		api.remove = function (key, attributes) {
+			api(key, '', extend(attributes, {
+				expires: -1
+			}));
+		};
+
+		api.withConverter = init;
+
+		return api;
+	}
+
+	return init(function () {});
+}));
+
+},{}],4:[function(require,module,exports){
 'use strict';
 
 var pug_has_own_property = Object.prototype.hasOwnProperty;
@@ -259,7 +426,7 @@ function pug_rethrow(err, filename, lineno, str){
   throw err;
 };
 
-},{"fs":2}],4:[function(require,module,exports){
+},{"fs":2}],5:[function(require,module,exports){
 const templates = require("./templates");
 const toolbar = require('./toolbar');
 const containerManager = require('./container-manager');
@@ -412,7 +579,7 @@ router.on('/store/:name/install/:id', (params) => {
 				});
 		});
 });
-},{"./app-store":6,"./container-manager":7,"./router":9,"./templates":11,"./toolbar":12}],5:[function(require,module,exports){
+},{"./app-store":7,"./container-manager":8,"./router":10,"./templates":12,"./toolbar":13}],6:[function(require,module,exports){
 const router = require('./router');
 const toolbar = require('./toolbar');
 const templates = require('./templates');
@@ -511,7 +678,7 @@ router.on('/:name/ui', (params) => {
 	content.appendChild(iframe);
 });
 
-},{"./container-manager":7,"./router":9,"./templates":11,"./toolbar":12}],6:[function(require,module,exports){
+},{"./container-manager":8,"./router":10,"./templates":12,"./toolbar":13}],7:[function(require,module,exports){
 const router = require('./router');
 const toolbar = require('./toolbar');
 const templates = require('./templates');
@@ -716,11 +883,12 @@ router.on('/store/:name', (params) => {
 				});
 		});
 });
-},{"./app-install":4,"./container-manager":7,"./router":9,"./templates":11,"./toolbar":12}],7:[function(require,module,exports){
+},{"./app-install":5,"./container-manager":8,"./router":10,"./templates":12,"./toolbar":13}],8:[function(require,module,exports){
 const templates = require("./templates");
 const toolbar = require("./toolbar");
 const router = require("./router");
 const stores = require("./app-store");
+const cookies = require("js-cookie");
 
 function authHeader(obj) {
 	if (!obj) {
@@ -728,12 +896,11 @@ function authHeader(obj) {
 	}
 	const token = localStorage.getItem('databoxToken');
 	if (token) {
-		let headers = obj.headers;
-		if (!headers) {
-			headers = {};
+		if (!obj.headers) {
+			obj.headers = {};
 		}
-		headers['Authorization'] = 'Token ' + token;
-		obj.headers = headers;
+		obj.headers.Authorization = 'Token ' + token;
+		obj.headers.credentials = 'include';
 	}
 	return obj;
 }
@@ -754,21 +921,26 @@ module.exports.onConnectError = function (res) {
 };
 
 module.exports.onShowConnect = function () {
-	console.log("Show connect base");
 };
 
 module.exports.fetch = function (url, options) {
 	const databoxURL = localStorage.getItem('databoxURL') || '';
+	if(!databoxURL) {
+		return Promise.reject({status:404});
+	}
 	return fetch(databoxURL + url, authHeader(options))
 		.then(checkOk)
 };
 
 module.exports.connect = function () {
 	toolbar.disabled();
-	toolbar.showSpinner(() => { module.exports.showConnect() });
+	toolbar.showSpinner(() => {
+		module.exports.showConnect()
+	});
 	const databoxURL = localStorage.getItem('databoxURL');
-	return module.exports.fetch('api/driver/list')
-		.then(() => {
+	return module.exports.fetch('api/connect')
+		.then((res) => res.text())
+		.then((session) => {
 			if (document.getElementById('spinner') && databoxURL === localStorage.getItem('databoxURL')) {
 				const hostlabel = document.getElementById('hostname');
 				const url = new URL(databoxURL);
@@ -787,6 +959,8 @@ module.exports.connect = function () {
 						"name": "IoT Databox Store",
 						"url": "https://store.iotdatabox.com/"
 					}]);
+
+				cookies.set('session', session);
 
 				if (router.lastRouteResolved() !== null && router.lastRouteResolved().url === '/connect') {
 					router.navigate('/');
@@ -875,7 +1049,7 @@ module.exports.showConnect = function () {
 router.on('/connect', () => {
 	module.exports.showConnect();
 });
-},{"./app-store":6,"./router":9,"./templates":11,"./toolbar":12}],8:[function(require,module,exports){
+},{"./app-store":7,"./router":10,"./templates":12,"./toolbar":13,"js-cookie":3}],9:[function(require,module,exports){
 const router = require("./router");
 const toolbar = require("./toolbar");
 const templates = require("./templates");
@@ -899,10 +1073,10 @@ window.addEventListener('load', () => {
 toolbar.disabled();
 
 mdc.autoInit();
-},{"./app-list":5,"./container-manager":7,"./router":9,"./search":10,"./templates":11,"./toolbar":12}],9:[function(require,module,exports){
+},{"./app-list":6,"./container-manager":8,"./router":10,"./search":11,"./templates":12,"./toolbar":13}],10:[function(require,module,exports){
 const Navigo = require('Navigo');
 module.exports=new Navigo(null, true, '#!');
-},{"Navigo":1}],10:[function(require,module,exports){
+},{"Navigo":1}],11:[function(require,module,exports){
 const router = require('./router');
 const templates = require("./templates");
 const toolbar = require('./toolbar');
@@ -960,7 +1134,7 @@ router.on('/search/:query', (params) => {
 			});
 		});
 });
-},{"./app-store":6,"./router":9,"./templates":11,"./toolbar":12}],11:[function(require,module,exports){
+},{"./app-store":7,"./router":10,"./templates":12,"./toolbar":13}],12:[function(require,module,exports){
 'use strict';
 
 const pug = require('pug-runtime');
@@ -1937,7 +2111,7 @@ pug_html = pug_html + "star\u003C\u002Fi\u003E\u003C\u002Fdiv\u003E\u003C\u002Fd
 pug_html = pug_html + "\u003C\u002Fdiv\u003E\u003C\u002Fdiv\u003E\u003C\u002Fdiv\u003E";
 }}.call(this,"apps" in locals_for_with?locals_for_with.apps:typeof apps!=="undefined"?apps:undefined));} catch (err) {pug.rethrow(err, pug_debug_filename, pug_debug_line);};return pug_html;};
 
-module.exports['connect'] = function template(locals) {var pug_html = "", pug_mixins = {}, pug_interp;var pug_debug_filename, pug_debug_line;try {;var locals_for_with = (locals || {});(function (error) {;pug_debug_line = 1;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+module.exports['connect'] = function template(locals) {var pug_html = "", pug_mixins = {}, pug_interp;var pug_debug_filename, pug_debug_line;try {;pug_debug_line = 1;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Cdiv class=\"mdc-layout-grid\"\u003E";
 ;pug_debug_line = 2;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Cdiv class=\"mdc-layout-grid__inner\"\u003E";
@@ -1958,42 +2132,39 @@ pug_html = pug_html + "documentation\u003C\u002Fa\u003E";
 ;pug_debug_line = 10;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "&nbsp;for help in setting up a Databox.\u003C\u002Fsection\u003E";
 ;pug_debug_line = 12;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
-if (error) {
+pug_html = pug_html + "\u003Csection class=\"mdc-card__supporting-text\" id=\"error_details\" style=\"display:none;\"\u003E";
 ;pug_debug_line = 13;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
-pug_html = pug_html + "\u003Csection class=\"mdc-card__supporting-text\"\u003E";
-;pug_debug_line = 14;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Ch1 class=\"mdc-card__title mdc-card__title--large\"\u003E";
-;pug_debug_line = 15;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 14;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "Connection Error\u003C\u002Fh1\u003E";
-;pug_debug_line = 16;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 15;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Ch2 class=\"mdc-card__subtitle\"\u003E";
-;pug_debug_line = 17;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 16;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "Could not connect to the Databox at&nbsp;";
-;pug_debug_line = 18;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 17;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Cspan id=\"error_host\"\u003E\u003C\u002Fspan\u003E\u003C\u002Fh2\u003E\u003C\u002Fsection\u003E";
-}
-;pug_debug_line = 20;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 19;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Csection class=\"mdc-card__supporting-text\"\u003E";
-;pug_debug_line = 21;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 20;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Cdiv class=\"mdc-text-field\" style=\"width: 100%;\"\u003E";
-;pug_debug_line = 22;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 21;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Cinput class=\"mdc-text-field__input\" id=\"connectField\" type=\"url\" style=\"width: 100%;\" required=\"required\"\u002F\u003E";
-;pug_debug_line = 23;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 22;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Clabel class=\"mdc-text-field__label\" for=\"connectField\"\u003E";
-;pug_debug_line = 24;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 23;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "Databox Address\u003C\u002Flabel\u003E";
-;pug_debug_line = 25;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 24;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Cdiv class=\"mdc-text-field__bottom-line\"\u003E\u003C\u002Fdiv\u003E\u003C\u002Fdiv\u003E\u003C\u002Fsection\u003E";
-;pug_debug_line = 27;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 26;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Csection class=\"mdc-card__actions\"\u003E";
-;pug_debug_line = 28;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 27;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Cbutton class=\"mdc-button mdc-button--primary\" id=\"qrbutton\"\u003E";
-;pug_debug_line = 29;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 28;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "Scan QR Code\u003C\u002Fbutton\u003E";
-;pug_debug_line = 30;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+;pug_debug_line = 29;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
 pug_html = pug_html + "\u003Cbutton class=\"mdc-card__action mdc-button mdc-button--primary\" id=\"connectButton\" disabled=\"disabled\"\u003E";
-;pug_debug_line = 31;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
-pug_html = pug_html + "Connect\u003C\u002Fbutton\u003E\u003C\u002Fsection\u003E\u003C\u002Fdiv\u003E\u003C\u002Fdiv\u003E\u003C\u002Fdiv\u003E";}.call(this,"error" in locals_for_with?locals_for_with.error:typeof error!=="undefined"?error:undefined));} catch (err) {pug.rethrow(err, pug_debug_filename, pug_debug_line);};return pug_html;};
+;pug_debug_line = 30;pug_debug_filename = "src\u002Ftemplates\u002Fconnect.pug";
+pug_html = pug_html + "Connect\u003C\u002Fbutton\u003E\u003C\u002Fsection\u003E\u003C\u002Fdiv\u003E\u003C\u002Fdiv\u003E\u003C\u002Fdiv\u003E";} catch (err) {pug.rethrow(err, pug_debug_filename, pug_debug_line);};return pug_html;};
 
 module.exports['login'] = function template(locals) {var pug_html = "", pug_mixins = {}, pug_interp;var pug_debug_filename, pug_debug_line;try {;pug_debug_line = 1;pug_debug_filename = "src\u002Ftemplates\u002Flogin.pug";
 pug_html = pug_html + "\u003Cdiv class=\"mdc-layout-grid\"\u003E";
@@ -2251,7 +2422,7 @@ pug_html = pug_html + "documentation\u003C\u002Fa\u003E";
 ;pug_debug_line = 39;pug_debug_filename = "src\u002Ftemplates\u002Fwelcome-web.pug";
 pug_html = pug_html + ".\u003C\u002Fdiv\u003E\u003C\u002Fsection\u003E\u003C\u002Fdiv\u003E\u003C\u002Fdiv\u003E\u003C\u002Fdiv\u003E";} catch (err) {pug.rethrow(err, pug_debug_filename, pug_debug_line);};return pug_html;};
 
-},{"pug-runtime":3}],12:[function(require,module,exports){
+},{"pug-runtime":4}],13:[function(require,module,exports){
 const router = require("./router.js");
 const templates = require("./templates");
 
@@ -2324,7 +2495,7 @@ router.hooks({
 		mdc.autoInit();
 	}
 });
-},{"./router.js":9,"./templates":11}],13:[function(require,module,exports){
+},{"./router.js":10,"./templates":12}],14:[function(require,module,exports){
 require('./js/main.js');
 const router = require("./js/router");
 const containerManager = require('./js/container-manager');
@@ -2346,4 +2517,4 @@ if(localStorage.getItem('databoxURL') === null) {
 	const url = new URL(window.location);
 	localStorage.setItem('databoxURL', url.protocol + '//' + url.host + '/');
 }
-},{"./js/container-manager":7,"./js/main.js":8,"./js/router":9,"./js/templates":11,"./js/toolbar":12}]},{},[13]);
+},{"./js/container-manager":8,"./js/main.js":9,"./js/router":10,"./js/templates":12,"./js/toolbar":13}]},{},[14]);
