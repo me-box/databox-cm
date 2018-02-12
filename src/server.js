@@ -23,6 +23,10 @@ module.exports = {
 			res.status(401).send("Authorization Required");
 		}
 
+		function verifyCookie(req) {
+			return sessionToken && req.cookies.session === sessionToken;
+		}
+
 		function verifyToken(req) {
 			// Grab the "Authorization" header.
 			const auth = req.get("authorization");
@@ -36,8 +40,46 @@ module.exports = {
 			return false;
 		}
 
-		function verifyCookie(req) {
-			return sessionToken && req.cookies.session === sessionToken;
+		function requestCatalogue(href) {
+			if (href.includes('tcp://')) {
+				//read /cat from core-store
+				return new Promise((resolve) => {
+					const kvc = databox.NewKeyValueClient(href, false);
+					kvc.GetDatasourceCatalogue()
+						.then((catStr) => {
+							kvc.zestClient.ZMQsoc.close();
+							console.log(catStr);
+							resolve(JSON.parse(catStr));
+						})
+						.catch(() => {
+							kvc.zestClient.ZMQsoc.close();
+							console.log("Error /api/datasource/list can't get from " + href);
+							resolve({});
+						});
+				});
+			} else {
+				//read /cat from store-json or other store over https
+				return new Promise((resolve) => {
+					console.log("Read from " + href);
+					databoxRequestPromise({uri: href + '/cat'})
+						.then((request) => {
+							console.log(request);
+							let body = [];
+							request
+								.on('error', (error) => {
+									console.log(error);
+									resolve({});
+								})
+								.on('data', (chunk) => {
+									body.push(chunk);
+									console.log(Buffer.concat(body).toString());
+								})
+								.on('end', () => {
+									resolve(JSON.parse(Buffer.concat(body).toString()));
+								});
+						});
+				});
+			}
 		}
 
 		//Always proxy to the local store, app UI deals with remote stores
@@ -47,7 +89,11 @@ module.exports = {
 		appHttp.use(express.static('src/www/http'));
 		appHttp.get('/cert.pem', (req, res) => {
 			res.contentType('application/x-pem-file');
-			res.sendFile('/certs/containerManager.crt');
+			res.sendFile('/certs/rootCert.crt');
+		});
+		appHttp.get('/cert.der', (req, res) => {
+			res.contentType('application/x-x509-ca-cert');
+			res.sendFile('/certs/rootCert.der');
 		});
 		const serverHttp = http.createServer(appHttp);
 		serverHttp.listen(Config.portHttp);
@@ -138,79 +184,32 @@ module.exports = {
 				authError(res);
 				return;
 			}
-			databoxRequestPromise({uri: 'https://arbiter:8080/cat'})
-				.then((request) => {
-					console.log(JSON.stringify(request));
-					let body = [];
-					request
-						.on('error', () => {
-							res.json([]);
-						})
-						.on('data', (chunk) => {
-							body.push(chunk);
-						})
-						.on('end', () => {
-							const json = JSON.parse(Buffer.concat(body).toString());
-							if ('items' in json) {
-								const promises = [];
-								for (const item of json.items) {
-									promises.push(new Promise((resolve, reject) => {
-										if (item.href.includes('tcp://')) {
-											//read /cat from core-store
-											let kvc = databox.NewKeyValueClient(item.href, false);
-											kvc.GetDatasourceCatalogue()
-												.then((catStr) => {
-													kvc.zestClient.ZMQsoc.close();
-													console.log(catStr);
-													resolve(JSON.parse(catStr));
-												})
-												.catch(() => {
-													kvc.zestClient.ZMQsoc.close();
-													console.log("Error /api/datasource/list can't get from " + item.href);
-													resolve({});
-												});
-										} else {
-											//read /cat from store-json or other store over https
-											console.log("Read from " + item.href);
-											databoxRequestPromise({uri: item.href + '/cat'})
-												.then((request) => {
-													console.log(request);
-													let body = [];
-													request
-														.on('error', (error) => {
-															console.log(error);
-															resolve({});
-														})
-														.on('data', (chunk) => {
-															body.push(chunk);
-															console.log(Buffer.concat(body).toString());
-														})
-														.on('end', () => {
-															resolve(JSON.parse(Buffer.concat(body).toString()));
-														});
-												});
-										}
-									}));
-								}
-								return Promise.all(promises)
-									.then(results => {
-										const datasources = [];
-										for (const result of results) {
-											if ('items' in result) {
-												for (const item of result.items) {
-													datasources.push(item);
-												}
-											}
-										}
 
-										res.json(datasources);
-									})
-									.catch((error) => {
-										console.log(error);
-										res.json([]);
-									});
-							}
-						});
+			requestCatalogue('https://arbiter:8080')
+				.then((json) => {
+					if ('items' in json) {
+						const promises = [];
+						for (const item of json.items) {
+							promises.push(requestCatalogue(item.href));
+						}
+						return Promise.all(promises)
+							.then(results => {
+								const datasources = [];
+								for (const result of results) {
+									if ('items' in result) {
+										for (const item of result.items) {
+											datasources.push(item);
+										}
+									}
+								}
+
+								res.json(datasources);
+							})
+							.catch((error) => {
+								console.log(error);
+								res.json([]);
+							});
+					}
 				});
 		});
 
