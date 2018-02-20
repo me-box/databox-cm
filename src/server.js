@@ -159,6 +159,18 @@ module.exports = {
 			}
 		});
 
+		appHttps.get('/api/store/cat/:app', (req, res) => {
+			if (!verifyToken(req)) {
+				authError(res);
+				return;
+			}
+
+			requestCatalogue('tcp://' + req.params.app + ':5555')
+				.then((json) => {
+					res.json(json);
+				});
+		});
+
 		appHttps.get('/api/connect', (req, res) => {
 			if (!verifyToken(req)) {
 				authError(res);
