@@ -12,18 +12,18 @@ const ARBITER_TOKEN   = fs.readFileSync("/run/secrets/CM_KEY",{encoding:'base64'
 
 /**
  * This module wraps the node request module https://github.com/request/request and adds:
- * 
+ *
  * 1) an https agent that trust the container manger CA
  * 2) appropriate arbiter token when communicating with the arbiter
  * 3) Requests and caches macaroon form the arbiter before communicating with databox components other then the arbiter.
- *   
+ *
  * @param {object} options a request option object (The only required option is uri)
  */
 module.exports = function (options) {
     return new Promise((resolve,reject)=>{
 
         // TODO handle case where options is a string e.g https://www.some-url.com
-        
+
         //
         // Workout the host and path of the request
         //
@@ -36,8 +36,8 @@ module.exports = function (options) {
         //request to arbiter do not need a macaroon but do need the ARBITER_TOKEN
 	    const isRequestToArbiter = DATABOX_ARBITER_ENDPOINT.indexOf(host) !== -1;
 
-        //request to an external site or dev component 
-        //TODO: Lets not hard code these!! 
+        //request to an external site or dev component
+        //TODO: Lets not hard code these!!
 	    const isExternalRequest = host.indexOf('.') !== -1;
 
 	    const isExternalDevRequest = host.indexOf("app-server") !== -1 || host.indexOf("localhost") !== -1;
@@ -49,6 +49,8 @@ module.exports = function (options) {
             options.agent = httpsAgent;
         }
 
+        //set a 1000ms timeout
+        options.timeout = 1000
         if(isRequestToArbiter) {
             options.headers = {'X-Api-Key': ARBITER_TOKEN};
             //do the request and call back when done

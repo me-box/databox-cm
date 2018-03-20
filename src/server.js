@@ -142,11 +142,14 @@ module.exports = {
 										retried = true;
 										console.log('[Proxy] retry ' + req.url);
 										retryOnce();
+									} else {
+										next();
 									}
 								})
 								.pipe(res)
 								.on('error', (e) => {
 									console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
+									next();
 								})
 								.on('end', () => {
 									next();
