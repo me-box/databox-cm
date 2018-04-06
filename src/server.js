@@ -182,6 +182,7 @@ module.exports = {
 			if (!sessionToken) {
 				sessionToken = crypto.randomBytes(24).toString('base64');
 			}
+			res.cookie('session', sessionToken);
 			res.send(sessionToken);
 		});
 
