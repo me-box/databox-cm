@@ -2,7 +2,7 @@
 # Databox Container Manager
 
 Databox container manager and dashboard are the part of the databox platform.
-see [the main repository](https://github.com/me-box/databox) for more information. 
+see [the main repository](https://github.com/me-box/databox) for more information.
 
 For developing Databox core components - Container Manager (CM) exposes following functions:
 1. `setHttpsHelper(helper)`: this function provides a https-agent with Databox root certificate, so that arbitor accepts   requests by the https-agent.
@@ -23,10 +23,22 @@ For developing Databox core components - Container Manager (CM) exposes followin
 13. `deleteSLA(name)`: delete sla with `name` from `./slaStore/sladatastore.db`
 
 ### CM network functions using docker network
-14. `createNetwork(networkName, external)`: this function creates a docker network with name `networkName` and boolean type         `external` variable. If `external` is true, it means external excess to the network is allowed. 
+14. `createNetwork(networkName, external)`: this function creates a docker network with name `networkName` and boolean type         `external` variable. If `external` is true, it means external excess to the network is allowed.
 15. `connectToNetwork(container, networkName)`: this function connects a container to the docker network -`networkName`
 16. `disconnectFromNetwork(container, networkName)`: this function disconnects a container from the docker network -          `networkName`
 
 
+## Development of databox was supported by the following funding
 
+```
+EP/N028260/1, Databox: Privacy-Aware Infrastructure for Managing Personal Data
 
+EP/N028260/2, Databox: Privacy-Aware Infrastructure for Managing Personal Data
+
+EP/N014243/1, Future Everyday Interaction with the Autonomous Internet of Things
+
+EP/M001636/1, Privacy-by-Design: Building Accountability into the Internet of Things (IoTDatabox)
+
+EP/M02315X/1, From Human Data to Personal Experience
+
+```
