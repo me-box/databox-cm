@@ -451,7 +451,7 @@ function listDatasources(manifest) {
 }
 
 function appConfigDisplay(manifest, sensors) {
-	toolbar.showBack('Configure ' + manifest.displayName);
+	toolbar.showBack();
 	if ('packages' in manifest && manifest.packages.length > 0) {
 		const firstPackage = manifest.packages[0];
 		if (!('enabled' in firstPackage)) {
@@ -633,22 +633,22 @@ function reloadAppList(type) {
 							}
 						}
 
-						for(const container of containers) {
-							if(container.type === "store" && container.state === "running") {
+						for (const container of containers) {
+							if (container.type === "store" && container.state === "running") {
 								containerManager.fetch('api/store/cat/' + container.name)
 									.then((res) => res.json())
 									.then((cat) => {
 										let types = [];
 										let comma = false;
-										for(const item of cat.items) {
-											for(const metadata of item['item-metadata']) {
+										for (const item of cat.items) {
+											for (const metadata of item['item-metadata']) {
 												if (metadata.rel === "urn:X-databox:rels:hasType") {
 													types.push(metadata.val);
 												}
 											}
 										}
 
-										if(types.length !== 0) {
+										if (types.length !== 0) {
 											document.getElementById('types_' + container.name).innerText = 'contains ' + types.join(', ');
 										}
 									});
@@ -701,7 +701,6 @@ router.on('/:name/ui', (params) => {
 	iframe.style.height = (document.documentElement.clientHeight - 56) + 'px';
 	iframe.src = url;
 	iframe.name = "Test";
-	console.log(iframe)
 });
 
 },{"./container-manager":8,"./router":10,"./templates":12,"./toolbar":13}],7:[function(require,module,exports){
@@ -878,24 +877,24 @@ router.on('/store/:name', (params) => {
 						app: app
 					});
 
-					const installURL = "#!/" + manifest.name + "/config/";
+					const installURL = "#!/store/" + manifest.name + "/install/";
 					const menuItems = document.getElementsByClassName('version-item');
 					for (const menuItem of menuItems) {
 						menuItem.addEventListener('click', function (event) {
 							document.getElementById('install_link').href = installURL + event.target.id;
 							const menuItems = document.getElementsByClassName('version-item');
 							for (const menuItem of menuItems) {
-								menuItem.classList.remove('mdc-simple-menu--selected');
+								menuItem.classList.remove('mdc-list-item--selected');
 							}
-							event.target.classList.add('mdc-simple-menu--selected');
+							event.target.classList.add('mdc-list-item--selected');
 						})
 					}
 
 					if (menuItems.length > 0) {
-						menuItems.item(0).classList.add('mdc-simple-menu--selected');
+						menuItems.item(0).classList.add('mdc-list-item--selected');
 					}
 
-					const menu = new mdc.menu.MDCSimpleMenu(document.getElementById('versionMenu'));
+					const menu = new mdc.menu.MDCMenu(document.getElementById('versionMenu'));
 					document.getElementById('versionButton').addEventListener('click', function () {
 						menu.open = !menu.open
 					});
@@ -926,7 +925,7 @@ function authHeader(obj) {
 			obj.headers = {};
 		}
 		obj.headers.Authorization = 'Token ' + token;
-		obj.headers.credentials = 'include';
+		obj.credentials = 'include';
 	}
 	return obj;
 }
@@ -965,8 +964,7 @@ module.exports.connect = function () {
 	});
 	const databoxURL = localStorage.getItem('databoxURL');
 	return module.exports.fetch('api/connect')
-		.then((res) => res.text())
-		.then((session) => {
+		.then(() => {
 			if (document.getElementById('spinner') && databoxURL === localStorage.getItem('databoxURL')) {
 				const hostlabel = document.getElementById('hostname');
 				const url = new URL(databoxURL);
@@ -985,8 +983,6 @@ module.exports.connect = function () {
 						"name": "IoT Databox Store",
 						"url": "https://store.iotdatabox.com/"
 					}]);
-
-				cookies.set('session', session);
 
 				if (router.lastRouteResolved() !== null && router.lastRouteResolved().url === '/connect') {
 					router.navigate('/');
@@ -1283,7 +1279,7 @@ pug_html = pug_html + "\u003Cdiv class=\"app-icon-letter\"\u003E";
 ;pug_debug_line = 86;pug_debug_filename = "src\u002Ftemplates\u002Fapp-install.pug";
 pug_html = pug_html + (pug.escape(null == (pug_interp = manifest.displayName.charAt(0).toUpperCase()) ? "" : pug_interp)) + "\u003C\u002Fdiv\u003E";
 ;pug_debug_line = 87;pug_debug_filename = "src\u002Ftemplates\u002Fapp-install.pug";
-pug_html = pug_html + "\u003Cdiv style=\"padding: 16px\"\u003E";
+pug_html = pug_html + "\u003Cdiv style=\"padding: 0px 16px\"\u003E";
 ;pug_debug_line = 88;pug_debug_filename = "src\u002Ftemplates\u002Fapp-install.pug";
 pug_html = pug_html + "\u003Cdiv class=\"mdc-card__title--large\"\u003E";
 ;pug_debug_line = 89;pug_debug_filename = "src\u002Ftemplates\u002Fapp-install.pug";
@@ -2540,6 +2536,8 @@ pug_html = pug_html + ".\u003C\u002Fdiv\u003E\u003C\u002Fsection\u003E\u003C\u00
 const router = require("./router.js");
 const templates = require("./templates");
 
+let callbackFn = null;
+
 module.exports.disabled = function () {
 	document.getElementById('toolbar-search').style.display = 'none';
 	document.getElementById('toolbar').style.display = 'flex';
@@ -2559,12 +2557,17 @@ module.exports.showDrawer = function () {
 	document.getElementById('backicon').style.display = 'none';
 };
 
-module.exports.showBack = function () {
+module.exports.showBack = function (callback, search = true) {
+	callbackFn = callback;
 	document.getElementById('toolbaractions').innerText = '';
 	document.getElementById('toolbartitle').innerText = 'Databox';
 	document.getElementById('toolbar-search').style.display = 'none';
 	document.getElementById('toolbar').style.display = 'flex';
-	document.getElementById('searchicon').style.display = 'block';
+	if(search) {
+		document.getElementById('searchicon').style.display = 'block';
+	} else {
+		document.getElementById('searchicon').style.display = 'none';
+	}
 	document.getElementById('navicon').style.display = 'none';
 	document.getElementById('navicon').style.visibility = 'visible';
 	document.getElementById('backicon').style.display = 'block';
@@ -2585,7 +2588,13 @@ toolbar.fixedAdjustElement = document.querySelector('.mdc-toolbar-fixed-adjust')
 
 const drawer = new mdc.drawer.MDCTemporaryDrawer(document.querySelector('.mdc-drawer--temporary'));
 document.getElementById('navicon').addEventListener('click', () => drawer.open = true);
-document.getElementById('backicon').addEventListener('click', () => window.history.back());
+document.getElementById('backicon').addEventListener('click', () => {
+	if(callbackFn) {
+		callbackFn();
+	} else {
+		window.history.back()
+	}
+});
 document.getElementById('searchbackicon').addEventListener('click', () => window.history.back());
 
 router.hooks({
