@@ -188,7 +188,8 @@ module.exports = {
 			if (!sessionToken) {
 				sessionToken = crypto.randomBytes(24).toString('base64');
 			}
-			res.send(sessionToken);
+			res.cookie('session', sessionToken);
+			res.send("connected");
 		});
 
 		appHttps.get('/api/qrcode.png', (req, res) => {
@@ -294,6 +295,7 @@ module.exports = {
 					return Promise.all(proms);
 				})
 				.then((tasks) => {
+					res.cookie('session', sessionToken);
 					res.json(tasks);
 				})
 				.catch((error) => {
