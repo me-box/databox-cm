@@ -851,18 +851,29 @@ const saveSLA = function (sla) {
 	return db.putSLA(sla.name, sla);
 };
 
-exports.reloadInstalledComponents = function () {
+const reloadInstalledComponents = async function () {
 	return new Promise((resolve, reject) => {
 		getActiveSLAs()
-		.then((slas)=>{
-			slas.forEach(sla => {
-				console.log("Launching previously installed component:: " + sla.name);
-				install(sla)
-			});
+		.then(async (slas)=>{
+
+			const apps = slas.filter(s => s["databox-type"]  == "app");
+			const drivers = slas.filter(s => s["databox-type"]  == "driver");
+
+			for ( let sla of drivers ) {
+				console.log("Launching previously installed driver:: " + sla.name);
+				await install(sla)
+			};
+
+			for ( let sla of apps ) {
+				console.log("Launching previously installed app:: " + sla.name);
+				await install(sla)
+			};
+
 			resolve(slas)
 		})
 	});
 }
+exports.reloadInstalledComponents = reloadInstalledComponents
 
 let getActiveSLAs = function () {
 	return db.getAllSLAs();
