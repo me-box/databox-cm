@@ -137,21 +137,27 @@ module.exports = {
 
 							return req.pipe(resolvedRequest)
 								.on('error', (e) => {
-									console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
+									console.log('[Proxy] ERROR: 1 ' + req.url + " " + e.message);
 									if (!retried && e.message.includes("getaddrinfo ENOTFOUND")) {
 										retried = true;
 										console.log('[Proxy] retry ' + req.url);
 										retryOnce();
 									} else {
+										req.socket.destroy();
+										res.status(500).end();
 										next();
 									}
 								})
 								.pipe(res)
 								.on('error', (e) => {
-									console.log('[Proxy] ERROR: ' + req.url + " " + e.message);
+									console.log('[Proxy] ERROR: 2 ' + req.url + " " + e.message);
+									req.socket.destroy();
+									res.status(500).end();
 									next();
 								})
 								.on('end', () => {
+									req.socket.destroy();
+									res.status(200).end();
 									next();
 								});
 						});
