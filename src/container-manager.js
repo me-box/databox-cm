@@ -1,4 +1,9 @@
 /*jshint esversion: 6 */
+
+require('log-timestamp')(function() {
+	return '[CM ' + (new Date()).toISOString().replace(/-/g, '').split('T')[0] + '] %s' }
+);
+
 const Config = require('./config.json');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -338,7 +343,11 @@ const createSecrets = async function (config, sla) {
 			return {"name": name, "id": secret.id};
 		})
 		.catch((err) => {
-			console.log('[ERROR] creating secret ' + name, err)
+			if(err.Error.indexOf("AlreadyExists") > -1) {
+				console.log('[Warning] secret already exists for ' + name)
+			} else {
+				console.log('[ERROR] creating secret ' + name, err)
+			}
 		});
 	}
 
@@ -775,7 +784,6 @@ exports.generateArbiterToken = generateArbiterToken;
 
 const updateArbiter = async function (data) {
 	return new Promise(async (resolve, reject) => {
-		console.log("[updateArbiter] DONE");
 		const options = {
 			url: DATABOX_ARBITER_ENDPOINT + "/cm/upsert-container-info",
 			method: 'POST',
@@ -785,16 +793,16 @@ const updateArbiter = async function (data) {
 				'x-api-key': arbiterKey
 			}
 		};
-		console.log(options);
 		request(
 			options,
 			function (err, response, body) {
 				if (err) {
+					console.log("[updateArbiter] Failed");
 					reject(err);
 					return;
 				}
-				console.log("[updateArbiter] DONE");
-				resolve(JSON.parse(body));
+				console.log("[updateArbiter] Success");
+				resolve();
 			});
 	});
 };

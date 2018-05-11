@@ -36,17 +36,18 @@
 		"cors": "^2.8.4",
 		"dockerode": "^2.5.4",
 		"express": "^4.16.3",
+		"log-timestamp": "^0.1.2",
 		"modclean": "^2.1.2",
 		"nedb": "^1.8.0",
-		"node-forge": "^0.7.5",
 		"node-databox": "^0.7.6",
+		"node-forge": "^0.7.5",
 		"promise-retry": "^1.1.1",
 		"request": "^2.85.0",
 		"selfsigned": "^1.10.2",
 		"url": "^0.11.0"
 	},
 	"devDependencies": {
-		"mocha": "^3.1.2",
+		"mocha": "^5.1.1",
 		"supertest": "^2.0.1",
 		"should": "^11.1.1"
 	}
