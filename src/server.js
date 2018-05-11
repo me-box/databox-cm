@@ -1,5 +1,10 @@
 /*jshint esversion: 6 */
 
+require('log-timestamp')(function() {
+	return '[CM Server ' + (new Date()).toISOString().replace(/-/g, '').split('T')[0] + '] %s' }
+);
+
+
 const Config = require('./config.json');
 const authToken = require('../certs/container-mananager-auth.json');
 
