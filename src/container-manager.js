@@ -1,7 +1,7 @@
 /*jshint esversion: 6 */
 
 require('log-timestamp')(function() {
-	return '[CM ' + (new Date()).toISOString().replace(/-/g, '').split('T')[0] + '] %s' }
+	return '[CM ' + (new Date()).toISOString() + '] %s' }
 );
 
 const Config = require('./config.json');

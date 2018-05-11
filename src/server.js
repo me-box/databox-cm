@@ -1,7 +1,7 @@
 /*jshint esversion: 6 */
 
 require('log-timestamp')(function() {
-	return '[CM Server ' + (new Date()).toISOString().replace(/-/g, '').split('T')[0] + '] %s' }
+	return '[CM Server ' + (new Date()).toISOString() + '] %s' }
 );
 
 
