@@ -204,17 +204,21 @@ const install = async function (sla) {
 			function wait () { return new Promise( (resolve,reject)=>{ setTimeout(resolve,5000)} )};
 			await wait();
 		}
+
+		//Add all the permissions for App/driver and any dependent store
+		console.log("[CM] Adding permissions from sla" + containerConfig.Name);
+		await addPermissionsFromSla(sla)
+			.catch((err) => {
+				reject("Error adding permissions" + err);
+			});
+
 		console.log("[CM] creating service " + containerConfig.Name);
 		await docker.createService(containerConfig)
 			.catch((err) => {
 				console.log("[ERROR] creating service ", containerConfig, err)
 			});
 
-		//Add all the permissions for App/driver and any dependent store
-		await addPermissionsFromSla(sla)
-			.catch((err) => {
-				reject("Error adding permissions" + err);
-			});
+
 
 		resolve([containerConfig.Name, containerConfig.Name || "NO STORE"]);
 	});

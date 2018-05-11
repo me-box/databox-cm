@@ -48,7 +48,7 @@ module.exports = {
 					kvc.GetDatasourceCatalogue()
 						.then((catStr) => {
 							kvc.zestClient.ZMQsoc.close();
-							console.log(catStr);
+							//console.log(catStr);
 							resolve(JSON.parse(catStr));
 						})
 						.catch(() => {
@@ -63,7 +63,7 @@ module.exports = {
 					console.log("Read from " + href);
 					databoxRequestPromise({uri: href + '/cat'})
 						.then((request) => {
-							console.log(request);
+							//console.log(request);
 							let body = [];
 							request
 								.on('error', (error) => {
@@ -72,7 +72,7 @@ module.exports = {
 								})
 								.on('data', (chunk) => {
 									body.push(chunk);
-									console.log(Buffer.concat(body).toString());
+									//console.log(Buffer.concat(body).toString());
 								})
 								.on('end', () => {
 									resolve(JSON.parse(Buffer.concat(body).toString()));
@@ -242,14 +242,14 @@ module.exports = {
 			}
 			conman.listServices()
 				.then((services) => {
-					console.log(services);
+					//console.log(services);
 					let results = [];
 					for (const service of services) {
 						const name = service.Spec.Name;
 						results.push(name);
 					}
 
-					console.log(results);
+					//console.log(results);
 					res.json(results);
 				})
 				.catch((error) => {
@@ -311,7 +311,7 @@ module.exports = {
 				return;
 			}
 			const sla = req.body;
-			console.log(sla);
+			//console.log(sla);
 
 			conman.install(sla)
 				.then((config) => {
