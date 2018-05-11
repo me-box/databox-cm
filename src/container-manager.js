@@ -343,7 +343,11 @@ const createSecrets = async function (config, sla) {
 			return {"name": name, "id": secret.id};
 		})
 		.catch((err) => {
-			console.log('[ERROR] creating secret ' + name, err)
+			if(err.Error.indexOf("AlreadyExists") > -1) {
+				console.log('[Warning] secret already exists for ' + name)
+			} else {
+				console.log('[ERROR] creating secret ' + name, err)
+			}
 		});
 	}
 
