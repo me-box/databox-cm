@@ -203,7 +203,11 @@ const install = async function (sla) {
 				});
 				await docker.createService(dependentStoreConfig)
 					.catch((err) => {
-						console.log("[ERROR] creating dependent store service ", dependentStoreConfig, err)
+						if(err.message.indexOf("name conflicts with an existing object") > -1) {
+							console.log('[Warning] dependent store  already exists for ' + dependentStoreConfig.Name)
+						} else {
+							console.log("[ERROR] creating dependent store service ", dependentStoreConfig, err)
+						}
 					});
 			}
 
@@ -345,7 +349,6 @@ const createSecrets = async function (config, sla) {
 			return {"name": name, "id": secret.id};
 		})
 		.catch((err) => {
-			console.log("|",err,"|")
 			if(err.message.indexOf("AlreadyExists") > -1) {
 				console.log('[Warning] secret already exists for ' + name)
 			} else {
