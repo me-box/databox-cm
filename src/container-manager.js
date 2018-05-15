@@ -40,14 +40,16 @@ let getRegistryUrlFromSLA = function (sla) {
 	//default to the config file
 	let registryUrl = Config.registryUrl;
 
-	if (sla.storeUrl) {
+	if (typeof sla.storeUrl !== "undefined") {
 		const storeUrl = url.parse(sla.storeUrl);
 		if (storeUrl.hostname === "localhost" || storeUrl.hostname === "127.0.0.1") {
 			//its a locally installed image get it from the local system
 			console.log("Using local registry");
 			registryUrl = "";
 		} else {
-			if (sla.registry) {
+			if (sla.registry && (sla.registry === "localhost" || sla.registry === "127.0.0.1" ) ) {
+				registryUrl = "";
+			} else if (sla.registry) {
 				//allow overriding image location in manifest for SDK
 				registryUrl = sla.registry + "/";
 			} else {
@@ -343,7 +345,8 @@ const createSecrets = async function (config, sla) {
 			return {"name": name, "id": secret.id};
 		})
 		.catch((err) => {
-			if(err.indexOf("AlreadyExists") > -1) {
+			console.log("|",err,"|")
+			if(err.message.indexOf("AlreadyExists") > -1) {
 				console.log('[Warning] secret already exists for ' + name)
 			} else {
 				console.log('[ERROR] creating secret ' + name, err)
