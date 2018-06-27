@@ -21,7 +21,6 @@ func ServeSecure(cm *ContainerManager, password string) {
 	//pull required databox components from the ContainerManager
 	cli := cm.cli
 	ac := cm.ArbiterClient
-	request := cm.Request
 
 	//start the https server for the app UI
 	r := mux.NewRouter()
@@ -62,7 +61,7 @@ func ServeSecure(cm *ContainerManager, password string) {
 
 		json, err := json.Marshal(data)
 		if err != nil {
-			libDatabox.Err("[/api/qrcode.png] Error parsing JSON " + err.Error())
+			libDatabox.Err("[/qrcode.png] Error parsing JSON " + err.Error())
 			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(`{"status":400,"msg":` + err.Error() + `}`))
@@ -97,7 +96,7 @@ func ServeSecure(cm *ContainerManager, password string) {
 		for _, item := range hyperCatRoot.Items {
 			//get the store cat
 			storeURL, _ := libDatabox.GetStoreURLFromDsHref(item.Href)
-			sc := libDatabox.NewCoreStoreClient(request, ac, "/run/secrets/ZMQ_PUBLIC_KEY", storeURL, false)
+			sc := libDatabox.NewCoreStoreClient(ac, "/run/secrets/ZMQ_PUBLIC_KEY", storeURL, false)
 			storeCat, err := sc.GetStoreDataSourceCatalogue(item.Href)
 			if err != nil {
 				libDatabox.Err("[/api/datasource/list] Error GetStoreDataSourceCatalogue " + err.Error())
@@ -124,9 +123,8 @@ func ServeSecure(cm *ContainerManager, password string) {
 		store := vars["store"]
 
 		storeURL := "tcp://" + store + ":5555"
-		storeHref := "https://" + store + ":8080"
-		sc := libDatabox.NewCoreStoreClient(request, ac, "/run/secrets/ZMQ_PUBLIC_KEY", storeURL, false)
-		storeCat, err := sc.GetStoreDataSourceCatalogue(storeHref)
+		sc := libDatabox.NewCoreStoreClient(ac, "/run/secrets/ZMQ_PUBLIC_KEY", storeURL, false)
+		storeCat, err := sc.GetStoreDataSourceCatalogue(storeURL)
 		if err != nil {
 			libDatabox.Err("[/api/store/cat/{store}] Error GetStoreDataSourceCatalogue " + err.Error())
 			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
