@@ -4,9 +4,9 @@ ENV GOPATH="/go"
 RUN apk update && apk add pkgconfig build-base bash autoconf automake libtool gettext openrc git libzmq zeromq-dev mercurial
 #COPY . . if you update the libs below build with --no-cache
 RUN go get -u github.com/gorilla/mux
-RUN go get -u golang.org/x/net/websocket
+RUN go get -u github.com/gorilla/websocket
 RUN go get -u github.com/pebbe/zmq4
-RUN go get -u github.com/me-box/lib-go-databox
+RUN go get -u github.com/toshbrown/lib-go-databox
 RUN go get -u github.com/me-box/goZestClient
 RUN go get -u github.com/docker/docker/client
 RUN go get -u github.com/docker/docker/api/types
