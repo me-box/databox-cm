@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	libDatabox "github.com/toshbrown/lib-go-databox"
@@ -134,6 +135,14 @@ func GenRootCA(CAFilePathPriv string, CAFilePathPub string) {
 	libDatabox.ChkErrFatal(err)
 	pem.Encode(certOutPub, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 	certOutPub.Close()
+
+	derPath := strings.Replace(CAFilePathPub, "crt", "der", 1)
+	derOutPub, err := os.Create(derPath)
+	libDatabox.ChkErrFatal(err)
+	pubDerBytes := x509.MarshalPKCS1PublicKey(&priv.PublicKey)
+	_, err = derOutPub.Write(pubDerBytes)
+	libDatabox.ChkErrFatal(err)
+	derOutPub.Close()
 
 	certOutPriv, err := os.Create(CAFilePathPriv)
 	libDatabox.ChkErrFatal(err)
