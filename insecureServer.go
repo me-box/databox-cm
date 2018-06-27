@@ -17,8 +17,8 @@ func ServeInsecure() {
 
 	router.HandleFunc("/cert.pem", func(w http.ResponseWriter, r *http.Request) {
 		pubCert, err := ioutil.ReadFile(pubCertFullPath)
+		w.Header().Set("Content-Type", "application/x-pem-file")
 		if err != nil {
-			w.Header().Set("Content-Type", "application/x-pem-file")
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(err.Error()))
 			return
