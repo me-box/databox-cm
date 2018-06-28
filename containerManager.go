@@ -91,13 +91,13 @@ func (cm ContainerManager) Start() {
 	cm.cmStoreURL = cm.launchCMStore()
 
 	//setup the cm to log to the store
-	cm.CoreStoreClient = libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", cm.cmStoreURL, true)
-	/*l, err := libDatabox.New(cm.CoreStoreClient, cm.Options.EnableDebugLogging)
+	cm.CoreStoreClient = libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", cm.cmStoreURL, false)
+	l, err := libDatabox.New(cm.CoreStoreClient, cm.Options.EnableDebugLogging)
 	if err != nil {
 		libDatabox.Err("Filed to set up logging to store. " + err.Error())
 	}
 	cm.Logger = l
-	cm.Logger.Debug("CM logs going to the cm store")*/
+	cm.Logger.Debug("CM logs going to the cm store")
 
 	//setup the cmStore
 	cm.Store = NewCMStore(cm.CoreStoreClient)
