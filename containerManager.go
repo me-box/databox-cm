@@ -48,7 +48,8 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 	cli, _ := client.NewEnvClient() //TODO store version in ContainerManagerOptions
 
 	request := libDatabox.NewDataboxHTTPsAPIWithPaths("/certs/containerManager.crt")
-	ac := libDatabox.NewArbiterClient("/certs/arbiterToken-container-manager", request, "https://arbiter:8080")
+	ac, err := libDatabox.NewArbiterClient("/certs/arbiterToken-container-manager", "/run/secrets/ZMQ_PUBLIC_KEY", "tcp://arbiter:4444")
+	libDatabox.ChkErr(err)
 	cnc := libDatabox.NewCoreNetworkClient("/certs/arbiterToken-databox-network", request)
 
 	cm := ContainerManager{
@@ -74,17 +75,29 @@ func (cm ContainerManager) Start() {
 	//register with core-network
 	cm.CoreNetworkClient.RegisterPrivileged()
 
+	//wait for the arbiter
+	_, err := cm.WaitForService("arbiter", 10)
+	if err != nil {
+		libDatabox.Err("Filed to register the cm with the arbiter. " + err.Error())
+	}
+
+	//register CM with arbiter - this is needed as the CM now has a store!
+	err = cm.ArbiterClient.RegesterDataboxComponent("container-manager", cm.ArbiterClient.ArbiterToken, libDatabox.DataboxTypeApp)
+	if err != nil {
+		libDatabox.Err("Filed to register the cm with the arbiter. " + err.Error())
+	}
+
 	//launch the CM store
 	cm.cmStoreURL = cm.launchCMStore()
 
 	//setup the cm to log to the store
-	cm.CoreStoreClient = libDatabox.NewCoreStoreClient(cm.Request, cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", cm.cmStoreURL, false)
-	l, err := libDatabox.New(cm.CoreStoreClient, cm.Options.EnableDebugLogging)
+	cm.CoreStoreClient = libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", cm.cmStoreURL, true)
+	/*l, err := libDatabox.New(cm.CoreStoreClient, cm.Options.EnableDebugLogging)
 	if err != nil {
 		libDatabox.Err("Filed to set up logging to store. " + err.Error())
 	}
 	cm.Logger = l
-	cm.Logger.Debug("CM logs going to the cm store")
+	cm.Logger.Debug("CM logs going to the cm store")*/
 
 	//setup the cmStore
 	cm.Store = NewCMStore(cm.CoreStoreClient)
@@ -157,16 +170,16 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA) error {
 	if requiredStoreName != "" {
 		service.TaskTemplate.ContainerSpec.Env = append(
 			service.TaskTemplate.ContainerSpec.Env,
-			"DATABOX_ZMQ_ENDPOINT=tcp://"+requiredStoreName+":5555",
+			"DATABOX_ZMQ_ENDPOINT=tcp://"+requiredStoreName+":4444",
 		)
 		service.TaskTemplate.ContainerSpec.Env = append(
 			service.TaskTemplate.ContainerSpec.Env,
-			"DATABOX_ZMQ_DEALER_ENDPOINT=tcp://"+requiredStoreName+":5556",
+			"DATABOX_ZMQ_DEALER_ENDPOINT=tcp://"+requiredStoreName+":4445",
 		)
 		cm.launchStore(sla.ResourceRequirements.Store, requiredStoreName, netConf)
 		requiredNetworks = append(requiredNetworks, requiredStoreName)
 
-		cm.WaitForContainer(requiredStoreName, 10)
+		cm.WaitForService(requiredStoreName, 10)
 
 	}
 
@@ -254,7 +267,7 @@ func (cm ContainerManager) Restart(name string) error {
 	}
 
 	//wait for the restarted container to start
-	newCont, err := cm.WaitForContainer(name, 10)
+	newCont, err := cm.WaitForService(name, 10)
 	libDatabox.ChkErr(err)
 
 	//found restarted container !!!
@@ -311,10 +324,10 @@ func (cm ContainerManager) Uninstall(name string) error {
 	return err
 }
 
-// WaitForContainer will wait for a container to start searching for it by service name.
+// WaitForService will wait for a container to start searching for it by service name.
 // If the container is found within the timeout it will return a docker/api/types.Container and nil
 // otherwise an error will be returned.
-func (cm ContainerManager) WaitForContainer(name string, timeout int) (types.Container, error) {
+func (cm ContainerManager) WaitForService(name string, timeout int) (types.Container, error) {
 	libDatabox.Debug("Waiting for " + name)
 	filters := filters.NewArgs()
 	filters.Add("label", "com.docker.swarm.service.name="+name)
@@ -396,7 +409,7 @@ func (cm ContainerManager) launchCMStore() string {
 	cm.launchStore("core-store", "container-manager-core-store", libDatabox.NetworkConfig{NetworkName: "databox-system-net", DNS: cm.DATABOX_DNS_IP})
 	cm.addPermissionsFromSLA(sla)
 
-	_, err := cm.WaitForContainer("container-manager-core-store", 10)
+	_, err := cm.WaitForService("container-manager-core-store", 10)
 	libDatabox.ChkErr(err)
 
 	return "tcp://container-manager-core-store:5555"
@@ -437,7 +450,7 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 				Labels: map[string]string{"databox.type": "driver"},
 
 				Env: []string{
-					"DATABOX_ARBITER_ENDPOINT=https://arbiter:8080",
+					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
 					"DATABOX_LOCAL_NAME=" + localContainerName,
 				},
 				Secrets: cm.genorateSecrets(localContainerName, sla.DataboxType),
@@ -475,7 +488,7 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 				Labels: map[string]string{"databox.type": "app"},
 
 				Env: []string{
-					"DATABOX_ARBITER_ENDPOINT=https://arbiter:8080",
+					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
 					"DATABOX_LOCAL_NAME=" + localContainerName,
 					"DATABOX_EXPORT_SERVICE_ENDPOINT=https://export-service:8080",
 				},
@@ -542,7 +555,7 @@ func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName s
 				Image:  cm.Options.DefaultStoreImage + ":" + cm.Options.Version,
 				Labels: map[string]string{"databox.type": "store"},
 				Env: []string{
-					"DATABOX_ARBITER_ENDPOINT=https://arbiter:8080",
+					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
 					"DATABOX_LOCAL_NAME=" + requiredStoreName,
 				},
 				Secrets: cm.genorateSecrets(requiredStoreName, libDatabox.DataboxType("store")),
@@ -654,11 +667,11 @@ func (cm ContainerManager) genorateSecrets(containerName string, databoxType lib
 
 	rawToken := GenerateArbiterToken()
 	b64TokenString := b64.StdEncoding.EncodeToString(rawToken)
-	secrets = append(secrets, cm.createSecret(strings.ToUpper(containerName)+"_KEY", rawToken, "ARBITER_TOKEN"))
+	secrets = append(secrets, cm.createSecret(strings.ToUpper(containerName)+"_KEY", []byte(b64TokenString), "ARBITER_TOKEN"))
 
 	//update the arbiter with the containers token
 	libDatabox.Debug("addSecrets UpdateArbiter " + containerName + " " + b64TokenString + " " + string(databoxType))
-	err := cm.ArbiterClient.UpdateArbiter(containerName, b64TokenString, databoxType)
+	err := cm.ArbiterClient.RegesterDataboxComponent(containerName, b64TokenString, databoxType)
 	if err != nil {
 		libDatabox.Err("Add Secrets error updating arbiter " + err.Error())
 	}

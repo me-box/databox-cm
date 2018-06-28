@@ -28,7 +28,7 @@ func main() {
 	libDatabox.Debug("key IDs :: " + rootCASecretID + " " + zmqPublic + " " + zmqPrivate)
 
 	cm := NewContainerManager(rootCASecretID, zmqPublic, zmqPrivate, &options)
-	_, err = cm.WaitForContainer("arbiter", 10)
+	_, err = cm.WaitForService("arbiter", 10)
 	libDatabox.ChkErrFatal(err)
 
 	//Start the databox cm Uis and do initial configuration

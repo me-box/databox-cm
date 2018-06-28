@@ -5,14 +5,14 @@ all: build
 
 .PHONY: build
 build:
-	docker build -t dev/container-manager .
+	docker build -t dev/core-container-manager .
 
 
 .PHONY: build-no-cache
 build-no-cache:
-	docker build -t dev/container-manager . --no-cache
+	docker build -t dev/core-container-manager . --no-cache
 
 .PHONY: test
 test:
 	#does it build is the best we can do here fror now
-	docker build -t dev/container-manager . --no-cache
+	docker build -t dev/core-container-manager . --no-cache

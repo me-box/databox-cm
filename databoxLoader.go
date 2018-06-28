@@ -53,27 +53,28 @@ func (d *Databox) Start() (string, string, string) {
 
 	//Create global secrets that are used in more than one container
 	libDatabox.Debug("Creating secrets")
-	d.DATABOX_ROOT_CA_ID = d.createSecretFromFile("DATABOX_ROOT_CA", "./certs/containerManagerPub.crt")
-	d.CM_KEY_ID = d.createSecretFromFile("CM_KEY", "./certs/arbiterToken-container-manager")
+	d.DATABOX_ROOT_CA_ID = d.createSecretFromFileIfNotExists("DATABOX_ROOT_CA", "./certs/containerManagerPub.crt")
+	d.CM_KEY_ID = d.createSecretFromFileIfNotExists("CM_KEY", "./certs/arbiterToken-container-manager")
 
-	d.DATABOX_ARBITER_ID = d.createSecretFromFile("DATABOX_ARBITER.pem", "./certs/arbiter.pem")
-	d.DATABOX_EXPORT_SERVICE_KEY_ID = d.createSecretFromFile("DATABOX_EXPORT_SERVICE_KEY", "./certs/arbiterToken-export-service")
+	d.DATABOX_ARBITER_ID = d.createSecretFromFileIfNotExists("DATABOX_ARBITER.pem", "./certs/arbiter.pem")
+	d.DATABOX_EXPORT_SERVICE_KEY_ID = d.createSecretFromFileIfNotExists("DATABOX_EXPORT_SERVICE_KEY", "./certs/arbiterToken-export-service")
 
-	d.DATABOX_PEM = d.createSecretFromFile("DATABOX.pem", "./certs/container-manager.pem") //TODO sort out certs!!
-	d.DATABOX_NETWORK_KEY = d.createSecretFromFile("DATABOX_NETWORK_KEY", "./certs/arbiterToken-databox-network")
+	d.DATABOX_PEM = d.createSecretFromFileIfNotExists("DATABOX.pem", "./certs/container-manager.pem") //TODO sort out certs!!
+	d.DATABOX_NETWORK_KEY = d.createSecretFromFileIfNotExists("DATABOX_NETWORK_KEY", "./certs/arbiterToken-databox-network")
 
 	//make ZMQ secrests
 	public, private, zmqErr := zmq.NewCurveKeypair()
 	libDatabox.ChkErrFatal(zmqErr)
-	d.ZMQ_PUBLIC_KEY_ID = d.createSecret("ZMQ_PUBLIC_KEY", public)
-	d.ZMQ_SECRET_KEY_ID = d.createSecret("ZMQ_SECRET_KEY", private)
+	d.ZMQ_PUBLIC_KEY_ID = d.createSecretIfNotExists("ZMQ_PUBLIC_KEY", public)
+	d.ZMQ_SECRET_KEY_ID = d.createSecretIfNotExists("ZMQ_SECRET_KEY", private)
 
-	//SET CM DNS, create secrets and join to databox-system-net
+	//SET CM DNS, create secrets and join to databox-system-net will restart the ContainerManager if needed.
 	d.updateContainerManager()
 
-	d.startAppServer()
 	d.startArbiter()
-	d.startExportService()
+	//TODO this has been disabled until its updated to the zest Arbiter
+	//d.startExportService()
+	d.startAppServer()
 
 	return d.DATABOX_ROOT_CA_ID, d.ZMQ_PUBLIC_KEY_ID, d.ZMQ_SECRET_KEY_ID
 }
@@ -154,7 +155,7 @@ func (d *Databox) startCoreNetwork() {
 
 	d.removeContainer(containerName)
 
-	d.pullImage(config.Image)
+	d.pullImageIfRequired(config.Image)
 
 	containerCreateCreatedBody, ccErr := d.cli.ContainerCreate(context.Background(), config, hostConfig, networkingConfig, containerName)
 	libDatabox.ChkErrFatal(ccErr)
@@ -187,7 +188,7 @@ func (d *Databox) startCoreNetworkRelay() {
 
 	d.removeContainer(containerName)
 
-	d.pullImage(config.Image)
+	d.pullImageIfRequired(config.Image)
 
 	containerCreateCreatedBody, ccErr := d.cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, containerName)
 	libDatabox.ChkErrFatal(ccErr)
@@ -195,7 +196,7 @@ func (d *Databox) startCoreNetworkRelay() {
 	d.cli.ContainerStart(context.Background(), containerCreateCreatedBody.ID, types.ContainerStartOptions{})
 }
 
-func (d *Databox) pullImage(image string) {
+func (d *Databox) pullImageIfRequired(image string) {
 	needToPull := true
 
 	//do we have the image on disk?
@@ -335,7 +336,7 @@ func (d *Databox) startAppServer() {
 
 	d.removeContainer(containerName)
 
-	d.pullImage(config.Image)
+	d.pullImageIfRequired(config.Image)
 
 	containerCreateCreatedBody, ccErr := d.cli.ContainerCreate(context.Background(), config, hostConfig, networkingConfig, containerName)
 	libDatabox.ChkErrFatal(ccErr)
@@ -344,7 +345,7 @@ func (d *Databox) startAppServer() {
 }
 
 func (d *Databox) startExportService() {
-	s1ID := d.createSecretFromFile("DATABOX_EXPORT_SERVICE.pem", "./certs/export-service.pem")
+	s1ID := d.createSecretFromFileIfNotExists("DATABOX_EXPORT_SERVICE.pem", "./certs/export-service.pem")
 
 	service := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
@@ -353,7 +354,7 @@ func (d *Databox) startExportService() {
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
 				Image: d.Options.ExportServiceImage + ":" + d.Options.Version,
-				Env:   []string{"DATABOX_ARBITER_ENDPOINT=https://arbiter:8080"},
+				Env:   []string{"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444"},
 				Secrets: []*swarm.SecretReference{
 					&swarm.SecretReference{
 						SecretID:   d.DATABOX_ROOT_CA_ID,
@@ -397,7 +398,7 @@ func (d *Databox) startExportService() {
 
 	serviceOptions := types.ServiceCreateOptions{}
 
-	d.pullImage(service.TaskTemplate.ContainerSpec.Image)
+	d.pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image)
 
 	_, err := d.cli.ServiceCreate(context.Background(), service, serviceOptions)
 	libDatabox.ChkErrFatal(err)
@@ -415,16 +416,6 @@ func (d *Databox) startArbiter() {
 				Image: d.Options.ArbiterImage + ":" + d.Options.Version,
 				Secrets: []*swarm.SecretReference{
 					&swarm.SecretReference{
-						SecretID:   d.DATABOX_ROOT_CA_ID,
-						SecretName: "DATABOX_ROOT_CA",
-						File: &swarm.SecretReferenceFileTarget{
-							Name: "DATABOX_ROOT_CA",
-							UID:  "0",
-							GID:  "0",
-							Mode: 929,
-						},
-					},
-					&swarm.SecretReference{
 						SecretID:   d.CM_KEY_ID,
 						SecretName: "CM_KEY",
 						File: &swarm.SecretReferenceFileTarget{
@@ -435,20 +426,10 @@ func (d *Databox) startArbiter() {
 						},
 					},
 					&swarm.SecretReference{
-						SecretID:   d.DATABOX_ARBITER_ID,
-						SecretName: "DATABOX_ARBITER.pem",
+						SecretID:   d.ZMQ_SECRET_KEY_ID,
+						SecretName: "ZMQ_SECRET_KEY",
 						File: &swarm.SecretReferenceFileTarget{
-							Name: "DATABOX_ARBITER.pem",
-							UID:  "0",
-							GID:  "0",
-							Mode: 929,
-						},
-					},
-					&swarm.SecretReference{
-						SecretID:   d.DATABOX_EXPORT_SERVICE_KEY_ID,
-						SecretName: "DATABOX_EXPORT_SERVICE_KEY",
-						File: &swarm.SecretReferenceFileTarget{
-							Name: "DATABOX_EXPORT_SERVICE_KEY",
+							Name: "ZMQ_SECRET_KEY",
 							UID:  "0",
 							GID:  "0",
 							Mode: 929,
@@ -466,14 +447,14 @@ func (d *Databox) startArbiter() {
 
 	serviceOptions := types.ServiceCreateOptions{}
 
-	d.pullImage(service.TaskTemplate.ContainerSpec.Image)
+	d.pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image)
 
 	_, err := d.cli.ServiceCreate(context.Background(), service, serviceOptions)
 	libDatabox.ChkErrFatal(err)
 
 }
 
-func (d *Databox) createSecret(name, data string) string {
+func (d *Databox) createSecretIfNotExists(name, data string) string {
 
 	filters := filters.NewArgs()
 	filters.Add("name", name)
@@ -496,11 +477,11 @@ func (d *Databox) createSecret(name, data string) string {
 	return secretCreateResponse.ID
 }
 
-func (d *Databox) createSecretFromFile(name, dataPath string) string {
+func (d *Databox) createSecretFromFileIfNotExists(name, dataPath string) string {
 
 	data, _ := ioutil.ReadFile(dataPath)
 
-	return d.createSecret(name, string(data))
+	return d.createSecretIfNotExists(name, string(data))
 }
 
 func (d *Databox) removeContainer(name string) {
