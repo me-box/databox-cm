@@ -5,6 +5,7 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -170,11 +171,11 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA) error {
 	if requiredStoreName != "" {
 		service.TaskTemplate.ContainerSpec.Env = append(
 			service.TaskTemplate.ContainerSpec.Env,
-			"DATABOX_ZMQ_ENDPOINT=tcp://"+requiredStoreName+":4444",
+			"DATABOX_ZMQ_ENDPOINT=tcp://"+requiredStoreName+":5555",
 		)
 		service.TaskTemplate.ContainerSpec.Env = append(
 			service.TaskTemplate.ContainerSpec.Env,
-			"DATABOX_ZMQ_DEALER_ENDPOINT=tcp://"+requiredStoreName+":4445",
+			"DATABOX_ZMQ_DEALER_ENDPOINT=tcp://"+requiredStoreName+":5556",
 		)
 		cm.launchStore(sla.ResourceRequirements.Store, requiredStoreName, netConf)
 		requiredNetworks = append(requiredNetworks, requiredStoreName)
@@ -188,10 +189,13 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA) error {
 
 	cm.pullImage(service.TaskTemplate.ContainerSpec.Image)
 
-	_, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
+	serviceCreateResponse, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
 	if err != nil {
 		libDatabox.Err("[Error launching] " + localContainerName + " " + err.Error())
+		return err
 	}
+
+	fmt.Println("serviceCreateResponse.Warnings::", serviceCreateResponse.Warnings)
 
 	cm.addPermissionsFromSLA(sla)
 
@@ -446,8 +450,9 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
-				Image:  registry + sla.Name + ":" + cm.Options.Version,
-				Labels: map[string]string{"databox.type": "driver"},
+				Hostname: localContainerName,
+				Image:    registry + sla.Name + ":" + cm.Options.Version,
+				Labels:   map[string]string{"databox.type": "driver"},
 
 				Env: []string{
 					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
@@ -459,8 +464,12 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 				},
 			},
 			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
-				Target: netConf.NetworkName,
+				Target:  netConf.NetworkName,
+				Aliases: []string{localContainerName},
 			}},
+			Placement: &swarm.Placement{
+				Constraints: []string{"node.Role == manager"},
+			},
 		},
 		EndpointSpec: &swarm.EndpointSpec{
 			Mode: swarm.ResolutionModeDNSRR,
@@ -484,8 +493,9 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
-				Image:  registry + sla.Name + ":" + cm.Options.Version,
-				Labels: map[string]string{"databox.type": "app"},
+				Hostname: localContainerName,
+				Image:    registry + sla.Name + ":" + cm.Options.Version,
+				Labels:   map[string]string{"databox.type": "app"},
 
 				Env: []string{
 					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
@@ -498,8 +508,12 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 				},
 			},
 			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
-				Target: netConf.NetworkName,
+				Target:  netConf.NetworkName,
+				Aliases: []string{localContainerName},
 			}},
+			Placement: &swarm.Placement{
+				Constraints: []string{"node.Role == manager"},
+			},
 		},
 		EndpointSpec: &swarm.EndpointSpec{
 			Mode: swarm.ResolutionModeDNSRR,
@@ -552,8 +566,9 @@ func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName s
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
-				Image:  cm.Options.DefaultStoreImage + ":" + cm.Options.Version,
-				Labels: map[string]string{"databox.type": "store"},
+				Hostname: requiredStoreName,
+				Image:    cm.Options.DefaultStoreImage + ":" + cm.Options.Version,
+				Labels:   map[string]string{"databox.type": "store"},
 				Env: []string{
 					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
 					"DATABOX_LOCAL_NAME=" + requiredStoreName,
@@ -570,8 +585,12 @@ func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName s
 					},
 				},
 			},
+			Placement: &swarm.Placement{
+				Constraints: []string{"node.role == manager"},
+			},
 			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
-				Target: netConf.NetworkName,
+				Target:  netConf.NetworkName,
+				Aliases: []string{requiredStoreName},
 			}},
 		},
 		EndpointSpec: &swarm.EndpointSpec{
@@ -795,7 +814,7 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 		libDatabox.Debug("Adding read permissions for container-manager on " + requiredStoreName + "/cat")
 		err = cm.addPermission("container-manager", requiredStoreName, "/cat", "GET", []string{})
 		if err != nil {
-			libDatabox.Err("Adding write permissions for dependent store " + err.Error())
+			libDatabox.Err("Adding read permissions for container-manager on /cat " + err.Error())
 		}
 
 		libDatabox.Debug("Adding write permissions for dependent store " + localContainerName + " on " + requiredStoreName + "/*")
@@ -812,7 +831,7 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 
 		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "GET", []string{})
 		if err != nil {
-			libDatabox.Err("Adding write permissions for dependent store " + err.Error())
+			libDatabox.Err("Adding read permissions for dependent store " + err.Error())
 		}
 
 	}
