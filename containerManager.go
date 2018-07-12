@@ -424,6 +424,10 @@ func (cm ContainerManager) calculateRegistryUrlFromSLA(sla libDatabox.SLA) strin
 	//default to default registry
 	registryUrl := cm.Options.DefaultRegistry + "/"
 
+	if sla.Registry != "" {
+		return sla.Registry + "/"
+	}
+
 	if sla.StoreURL != "" {
 		storeURL, err := url.Parse(sla.StoreURL)
 		if err != nil {
