@@ -65,8 +65,7 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 		Options:            opt,
 	}
 
-	//TODO multi arch support is not available yet Speak to poonam about progress
-	cm.ARCH = ""
+	cm.ARCH = "-" + opt.Arch
 
 	return cm
 }
