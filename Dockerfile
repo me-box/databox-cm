@@ -1,4 +1,4 @@
-FROM golang:1.10.3-alpine as gobuild
+FROM golang:1.10.3-alpine3.8 as gobuild
 WORKDIR /
 ENV GOPATH="/go"
 RUN apk update && apk add pkgconfig build-base bash autoconf automake libtool gettext openrc git libzmq zeromq-dev mercurial
@@ -20,7 +20,7 @@ COPY . /go/src/github.com/toshbrown/core-container-manager/
 RUN addgroup -S databox && adduser -S -g databox databox
 RUN GGO_ENABLED=0 GOOS=linux go build -a -tags netgo -installsuffix netgo -ldflags '-s -w' -o app /go/src/github.com/toshbrown/core-container-manager/*.go
 
-FROM alpine
+FROM amd64/alpine:3.8
 COPY --from=gobuild /etc/passwd /etc/passwd
 RUN apk update && apk add libzmq
 #TODO security
