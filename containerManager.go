@@ -65,8 +65,11 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 		Options:            opt,
 	}
 
-	cm.ARCH = "-" + opt.Arch
-
+	if opt.Arch != "" {
+		cm.ARCH = "-" + opt.Arch
+	} else {
+		cm.ARCH = ""
+	}
 	return cm
 }
 
@@ -409,10 +412,13 @@ func (cm ContainerManager) launchCMStore() string {
 			Store: "core-store",
 		},
 	}
-	cm.launchStore("core-store", "container-manager-core-store", libDatabox.NetworkConfig{NetworkName: "databox-system-net", DNS: cm.DATABOX_DNS_IP})
+
+	requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store + cm.ARCH
+
+	cm.launchStore("core-store", requiredStoreName, libDatabox.NetworkConfig{NetworkName: "databox-system-net", DNS: cm.DATABOX_DNS_IP})
 	cm.addPermissionsFromSLA(sla)
 
-	_, err := cm.WaitForService("container-manager-core-store", 10)
+	_, err := cm.WaitForService(requiredStoreName, 10)
 	libDatabox.ChkErr(err)
 
 	return "tcp://container-manager-core-store:5555"
