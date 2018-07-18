@@ -245,7 +245,7 @@ func ServeSecure(cm *ContainerManager, password string) {
 
 		//TODO check and return an error!!!
 		libDatabox.Debug("/api/install LaunchFromSLA")
-		cm.LaunchFromSLA(sla)
+		go cm.LaunchFromSLA(sla)
 
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		w.WriteHeader(http.StatusOK)
@@ -318,14 +318,7 @@ func ServeSecure(cm *ContainerManager, password string) {
 
 		dboxproxy.Del(jsonBody.Name)
 
-		err = cm.Uninstall(jsonBody.Name)
-		if err != nil {
-			libDatabox.Err("[/api/uninstall] Uninstall of " + jsonBody.Name + " failed. " + err.Error())
-			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"status":400,"msg":"` + err.Error() + `"}`))
-			return
-		}
+		go cm.Uninstall(jsonBody.Name)
 
 		libDatabox.Debug("/api/uninstall finished")
 
