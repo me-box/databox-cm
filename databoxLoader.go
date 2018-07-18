@@ -73,7 +73,7 @@ func (d *Databox) Start() (string, string, string) {
 
 	d.startArbiter()
 	//TODO this has been disabled until its updated to the zest Arbiter
-	//d.startExportService()
+	d.startExportService()
 	d.startAppServer()
 
 	return d.DATABOX_ROOT_CA_ID, d.ZMQ_PUBLIC_KEY_ID, d.ZMQ_SECRET_KEY_ID
@@ -380,7 +380,27 @@ func (d *Databox) startExportService() {
 						SecretID:   d.DATABOX_EXPORT_SERVICE_KEY_ID,
 						SecretName: "DATABOX_EXPORT_SERVICE_KEY",
 						File: &swarm.SecretReferenceFileTarget{
-							Name: "DATABOX_EXPORT_SERVICE_KEY",
+							Name: "ARBITER_TOKEN",
+							UID:  "0",
+							GID:  "0",
+							Mode: 929,
+						},
+					},
+					&swarm.SecretReference{
+						SecretID:   d.ZMQ_PUBLIC_KEY_ID,
+						SecretName: "ZMQ_PUBLIC_KEY",
+						File: &swarm.SecretReferenceFileTarget{
+							Name: "ZMQ_PUBLIC_KEY",
+							UID:  "0",
+							GID:  "0",
+							Mode: 929,
+						},
+					},
+					&swarm.SecretReference{
+						SecretID:   d.ZMQ_PUBLIC_KEY_ID,
+						SecretName: "ZMQ_SECRET_KEY",
+						File: &swarm.SecretReferenceFileTarget{
+							Name: "ZMQ_SECRET_KEY",
 							UID:  "0",
 							GID:  "0",
 							Mode: 929,
