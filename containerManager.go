@@ -84,12 +84,14 @@ func (cm ContainerManager) Start() {
 		libDatabox.Err("Filed to register the cm with the arbiter. " + err.Error())
 	}
 
+	//start the export service and register with the Arbiter
+	cm.startExportService()
+
 	//register CM with arbiter - this is needed as the CM now has a store!
 	err = cm.ArbiterClient.RegesterDataboxComponent("container-manager", cm.ArbiterClient.ArbiterToken, libDatabox.DataboxTypeApp)
 	if err != nil {
 		libDatabox.Err("Filed to register the cm with the arbiter. " + err.Error())
 	}
-
 	//launch the CM store
 	cm.cmStoreURL = cm.launchCMStore()
 
@@ -860,5 +862,34 @@ func (cm ContainerManager) addPermission(name string, target string, path string
 	}
 
 	return cm.ArbiterClient.GrantContainerPermissions(newPermission)
+
+}
+
+func (cm ContainerManager) startExportService() {
+
+	service := swarm.ServiceSpec{
+		Annotations: swarm.Annotations{
+			Labels: map[string]string{"databox.type": "system"},
+		},
+		TaskTemplate: swarm.TaskSpec{
+			ContainerSpec: &swarm.ContainerSpec{
+				Image:   cm.Options.ExportServiceImage + cm.ARCH + ":" + cm.Options.Version,
+				Env:     []string{"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444"},
+				Secrets: cm.genorateSecrets("export-service", libDatabox.DataboxTypeStore),
+			},
+			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
+				Target: "databox-system-net",
+			}},
+		},
+	}
+
+	service.Name = "export-service"
+
+	serviceOptions := types.ServiceCreateOptions{}
+
+	cm.pullImage(service.TaskTemplate.ContainerSpec.Image)
+
+	_, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
+	libDatabox.ChkErrFatal(err)
 
 }

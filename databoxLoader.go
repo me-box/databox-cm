@@ -23,18 +23,17 @@ import (
 )
 
 type Databox struct {
-	cli                           *client.Client
-	registry                      string
-	DATABOX_ROOT_CA_ID            string
-	CM_KEY_ID                     string
-	DATABOX_ARBITER_ID            string
-	DATABOX_EXPORT_SERVICE_KEY_ID string
-	ZMQ_SECRET_KEY_ID             string
-	ZMQ_PUBLIC_KEY_ID             string
-	DATABOX_PEM                   string
-	DATABOX_NETWORK_KEY           string
-	DATABOX_DNS_IP                string
-	Options                       *libDatabox.ContainerManagerOptions
+	cli                 *client.Client
+	registry            string
+	DATABOX_ROOT_CA_ID  string
+	CM_KEY_ID           string
+	DATABOX_ARBITER_ID  string
+	ZMQ_SECRET_KEY_ID   string
+	ZMQ_PUBLIC_KEY_ID   string
+	DATABOX_PEM         string
+	DATABOX_NETWORK_KEY string
+	DATABOX_DNS_IP      string
+	Options             *libDatabox.ContainerManagerOptions
 }
 
 func NewDataboxLoader(opt *libDatabox.ContainerManagerOptions) Databox {
@@ -57,7 +56,6 @@ func (d *Databox) Start() (string, string, string) {
 	d.CM_KEY_ID = d.createSecretFromFileIfNotExists("CM_KEY", "./certs/arbiterToken-container-manager")
 
 	d.DATABOX_ARBITER_ID = d.createSecretFromFileIfNotExists("DATABOX_ARBITER.pem", "./certs/arbiter.pem")
-	d.DATABOX_EXPORT_SERVICE_KEY_ID = d.createSecretFromFileIfNotExists("DATABOX_EXPORT_SERVICE_KEY", "./certs/arbiterToken-export-service")
 
 	d.DATABOX_PEM = d.createSecretFromFileIfNotExists("DATABOX.pem", "./certs/container-manager.pem") //TODO sort out certs!!
 	d.DATABOX_NETWORK_KEY = d.createSecretFromFileIfNotExists("DATABOX_NETWORK_KEY", "./certs/arbiterToken-databox-network")
@@ -72,8 +70,6 @@ func (d *Databox) Start() (string, string, string) {
 	d.updateContainerManager()
 
 	d.startArbiter()
-	//TODO this has been disabled until its updated to the zest Arbiter
-	d.startExportService()
 	d.startAppServer()
 
 	return d.DATABOX_ROOT_CA_ID, d.ZMQ_PUBLIC_KEY_ID, d.ZMQ_SECRET_KEY_ID
@@ -342,87 +338,6 @@ func (d *Databox) startAppServer() {
 	libDatabox.ChkErrFatal(ccErr)
 
 	d.cli.ContainerStart(context.Background(), containerCreateCreatedBody.ID, types.ContainerStartOptions{})
-}
-
-func (d *Databox) startExportService() {
-	s1ID := d.createSecretFromFileIfNotExists("DATABOX_EXPORT_SERVICE.pem", "./certs/export-service.pem")
-
-	service := swarm.ServiceSpec{
-		Annotations: swarm.Annotations{
-			Labels: map[string]string{"databox.type": "system"},
-		},
-		TaskTemplate: swarm.TaskSpec{
-			ContainerSpec: &swarm.ContainerSpec{
-				Image: d.Options.ExportServiceImage + ":" + d.Options.Version,
-				Env:   []string{"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444"},
-				Secrets: []*swarm.SecretReference{
-					&swarm.SecretReference{
-						SecretID:   d.DATABOX_ROOT_CA_ID,
-						SecretName: "DATABOX_ROOT_CA",
-						File: &swarm.SecretReferenceFileTarget{
-							Name: "DATABOX_ROOT_CA",
-							UID:  "0",
-							GID:  "0",
-							Mode: 929,
-						},
-					},
-					&swarm.SecretReference{
-						SecretID:   s1ID,
-						SecretName: "DATABOX_EXPORT_SERVICE.pem",
-						File: &swarm.SecretReferenceFileTarget{
-							Name: "DATABOX_EXPORT_SERVICE.pem",
-							UID:  "0",
-							GID:  "0",
-							Mode: 929,
-						},
-					},
-					&swarm.SecretReference{
-						SecretID:   d.DATABOX_EXPORT_SERVICE_KEY_ID,
-						SecretName: "DATABOX_EXPORT_SERVICE_KEY",
-						File: &swarm.SecretReferenceFileTarget{
-							Name: "ARBITER_TOKEN",
-							UID:  "0",
-							GID:  "0",
-							Mode: 929,
-						},
-					},
-					&swarm.SecretReference{
-						SecretID:   d.ZMQ_PUBLIC_KEY_ID,
-						SecretName: "ZMQ_PUBLIC_KEY",
-						File: &swarm.SecretReferenceFileTarget{
-							Name: "ZMQ_PUBLIC_KEY",
-							UID:  "0",
-							GID:  "0",
-							Mode: 929,
-						},
-					},
-					&swarm.SecretReference{
-						SecretID:   d.ZMQ_PUBLIC_KEY_ID,
-						SecretName: "ZMQ_SECRET_KEY",
-						File: &swarm.SecretReferenceFileTarget{
-							Name: "ZMQ_SECRET_KEY",
-							UID:  "0",
-							GID:  "0",
-							Mode: 929,
-						},
-					},
-				},
-			},
-			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
-				Target: "databox-system-net",
-			}},
-		},
-	}
-
-	service.Name = "export-service"
-
-	serviceOptions := types.ServiceCreateOptions{}
-
-	d.pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image)
-
-	_, err := d.cli.ServiceCreate(context.Background(), service, serviceOptions)
-	libDatabox.ChkErrFatal(err)
-
 }
 
 func (d *Databox) startArbiter() {

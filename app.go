@@ -45,7 +45,6 @@ func generateArbiterTokens() {
 	components := []string{
 		"container-manager",
 		"databox-network",
-		"export-service",
 		"arbiter",
 	}
 
