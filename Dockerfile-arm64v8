@@ -4,18 +4,16 @@ RUN apk update && apk add build-base pkgconfig go git libzmq zeromq-dev alpine-s
 ENV GOPATH /go
 WORKDIR /
 #COPY . . if you update the libs below build with --no-cache
-RUN go get -u github.com/gorilla/mux
-RUN go get -u github.com/gorilla/websocket
-RUN go get -u github.com/pebbe/zmq4
-RUN go get -u github.com/toshbrown/lib-go-databox
-RUN go get -u github.com/me-box/goZestClient
-RUN go get -u github.com/docker/docker/client
-RUN go get -u github.com/docker/docker/api/types
-RUN go get -u github.com/pkg/errors
-RUN go get -u github.com/skip2/go-qrcode
-RUN go get -u github.com/docker/go-connections
+RUN go get -d github.com/gorilla/mux
+RUN go get -d github.com/gorilla/websocket
+RUN go get -d github.com/pebbe/zmq4
+RUN go get -d github.com/docker/docker/client
+RUN go get -d github.com/docker/docker/api/types
+RUN go get -d github.com/pkg/errors
+RUN go get -d github.com/skip2/go-qrcode
+RUN go get -d github.com/docker/go-connections
 RUN rm -rf /go/src/github.com/docker/docker/vendor/github.com/docker/go-connections
-RUN go get -u github.com/toshbrown/lib-go-databox
+RUN go get -d github.com/toshbrown/lib-go-databox
 
 COPY . /go/src/github.com/toshbrown/core-container-manager/
 RUN addgroup -S databox && adduser -S -g databox databox

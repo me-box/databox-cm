@@ -120,7 +120,7 @@ func (d *Databox) startCoreNetwork() {
 	}
 
 	_, err := d.cli.NetworkCreate(context.Background(), "databox-system-net", options)
-	libDatabox.ChkErrFatal(err)
+	libDatabox.ChkErr(err)
 
 	config := &container.Config{
 		Image:  d.Options.CoreNetworkImage + ":" + d.Options.Version,

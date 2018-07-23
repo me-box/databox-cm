@@ -65,11 +65,6 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 		Options:            opt,
 	}
 
-	if opt.Arch != "" {
-		cm.ARCH = "-" + opt.Arch
-	} else {
-		cm.ARCH = ""
-	}
 	return cm
 }
 
@@ -137,7 +132,7 @@ func (cm ContainerManager) Start() {
 	go ServeInsecure()
 	go ServeSecure(&cm, password)
 
-	libDatabox.Info("Container Manager Ready.")
+	libDatabox.Info("Container Manager Ready and waiting")
 
 	//Reload and saved drivers and app from the cm store
 	libDatabox.Info("Restarting saved apps and drivers")
@@ -148,13 +143,13 @@ func (cm ContainerManager) Start() {
 func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA) error {
 
 	//Make the localContainerName
-	localContainerName := sla.Name + cm.ARCH
+	localContainerName := sla.Name
 
 	//Make the requiredStoreName if needed
 	//TODO check store is supported!!
 	requiredStoreName := ""
 	if sla.ResourceRequirements.Store != "" {
-		requiredStoreName = sla.Name + "-" + sla.ResourceRequirements.Store + cm.ARCH
+		requiredStoreName = sla.Name + "-" + sla.ResourceRequirements.Store
 	}
 
 	//Create the networks and attach to the core-network.
@@ -415,7 +410,7 @@ func (cm ContainerManager) launchCMStore() string {
 		},
 	}
 
-	requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store + cm.ARCH
+	requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store
 
 	cm.launchStore("core-store", requiredStoreName, libDatabox.NetworkConfig{NetworkName: "databox-system-net", DNS: cm.DATABOX_DNS_IP})
 	cm.addPermissionsFromSLA(sla)
@@ -729,7 +724,7 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 
 	var err error
 
-	localContainerName := sla.Name + cm.ARCH
+	localContainerName := sla.Name
 
 	//set export permissions from export-whitelist
 	if len(sla.ExportWhitelists) > 0 {
@@ -820,7 +815,7 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 
 	//Add permissions for dependent stores if needed for apps and drivers
 	if sla.ResourceRequirements.Store != "" {
-		requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store + cm.ARCH
+		requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store
 
 		libDatabox.Debug("Adding read permissions for container-manager on " + requiredStoreName + "/cat")
 		err = cm.addPermission("container-manager", requiredStoreName, "/cat", "GET", []string{})
@@ -873,7 +868,7 @@ func (cm ContainerManager) startExportService() {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
-				Image:   cm.Options.ExportServiceImage + cm.ARCH + ":" + cm.Options.Version,
+				Image:   cm.Options.ExportServiceImage + ":" + cm.Options.Version,
 				Env:     []string{"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444"},
 				Secrets: cm.genorateSecrets("export-service", libDatabox.DataboxTypeStore),
 			},
