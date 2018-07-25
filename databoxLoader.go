@@ -14,11 +14,9 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
 	zmq "github.com/pebbe/zmq4"
 )
 
@@ -70,7 +68,6 @@ func (d *Databox) Start() (string, string, string) {
 	d.updateContainerManager()
 
 	d.startArbiter()
-	d.startAppServer()
 
 	return d.DATABOX_ROOT_CA_ID, d.ZMQ_PUBLIC_KEY_ID, d.ZMQ_SECRET_KEY_ID
 }
@@ -299,45 +296,6 @@ func (d *Databox) updateContainerManager() {
 	libDatabox.Info("Restarting the Container Manager")
 	time.Sleep(time.Second * 100)
 
-}
-
-func (d *Databox) startAppServer() {
-
-	containerName := "app-server"
-
-	config := &container.Config{
-		Image: d.Options.AppServerImage + ":latest", // + d.version,
-		Env:   []string{"LOCAL_MODE=1", "PORT=8181"},
-		ExposedPorts: nat.PortSet{
-			"8181/tcp": {},
-		},
-		Labels: map[string]string{"databox.type": "app-server"},
-	}
-
-	pemPath := d.Options.HostPath + "/certs/app-server.pem"
-
-	ports := make(nat.PortMap)
-	ports["8181/tcp"] = []nat.PortBinding{nat.PortBinding{HostPort: "8181"}}
-	hostConfig := &container.HostConfig{
-		Mounts: []mount.Mount{
-			mount.Mount{
-				Type:   mount.TypeBind,
-				Source: pemPath,
-				Target: "/run/secrets/DATABOX.pem",
-			},
-		},
-		PortBindings: ports,
-	}
-	networkingConfig := &network.NetworkingConfig{}
-
-	d.removeContainer(containerName)
-
-	d.pullImageIfRequired(config.Image)
-
-	containerCreateCreatedBody, ccErr := d.cli.ContainerCreate(context.Background(), config, hostConfig, networkingConfig, containerName)
-	libDatabox.ChkErrFatal(ccErr)
-
-	d.cli.ContainerStart(context.Background(), containerCreateCreatedBody.ID, types.ContainerStartOptions{})
 }
 
 func (d *Databox) startArbiter() {

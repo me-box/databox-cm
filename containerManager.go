@@ -128,6 +128,9 @@ func (cm ContainerManager) Start() {
 	}
 	libDatabox.Info("Password=" + password)
 
+	//start default drivers (driver-app-store, driver-export)
+	cm.launchAppStore()
+
 	//start the webUI and API
 	go ServeInsecure()
 	go ServeSecure(&cm, password)
@@ -140,7 +143,7 @@ func (cm ContainerManager) Start() {
 }
 
 // LaunchFromSLA will start a databox app or driver with the reliant stores and grant permissions required as described in the SLA
-func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA) error {
+func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 
 	//Make the localContainerName
 	localContainerName := sla.Name
@@ -151,6 +154,8 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA) error {
 	if sla.ResourceRequirements.Store != "" {
 		requiredStoreName = sla.Name + "-" + sla.ResourceRequirements.Store
 	}
+
+	libDatabox.Info("Installing " + localContainerName)
 
 	//Create the networks and attach to the core-network.
 	netConf := cm.CoreNetworkClient.PreConfig(localContainerName, sla)
@@ -164,6 +169,8 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA) error {
 		service, serviceOptions, requiredNetworks = cm.getAppConfig(sla, localContainerName, netConf)
 	case libDatabox.DataboxTypeDriver:
 		service, serviceOptions, requiredNetworks = cm.getDriverConfig(sla, localContainerName, netConf)
+	default:
+		return errors.New("Unsupported image type")
 	}
 
 	//If we need a store lets create one and set the needed environment variables
@@ -198,9 +205,11 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA) error {
 
 	cm.addPermissionsFromSLA(sla)
 
-	//save the sla for persistence over restarts
-	err = cm.Store.SaveSLA(sla)
-	libDatabox.ChkErr(err)
+	if save {
+		//save the sla for persistence over restarts
+		err = cm.Store.SaveSLA(sla)
+		libDatabox.ChkErr(err)
+	}
 
 	libDatabox.Info("Successfully installed " + sla.Name)
 
@@ -233,6 +242,9 @@ func (cm *ContainerManager) pullImage(image string) {
 		libDatabox.Info("Pulling Image " + image)
 		reader, err := cm.cli.ImagePull(context.Background(), cm.Options.DefaultRegistryHost+"/"+image, types.ImagePullOptions{})
 		libDatabox.ChkErr(err)
+		if err != nil {
+			return
+		}
 		io.Copy(ioutil.Discard, reader)
 		libDatabox.Info("Done pulling Image " + image)
 		reader.Close()
@@ -383,7 +395,7 @@ func (cm ContainerManager) reloadApps() {
 	//launch drivers
 	for _, sla := range slaList {
 		if sla.DataboxType == libDatabox.DataboxTypeDriver {
-			cm.LaunchFromSLA(sla)
+			cm.LaunchFromSLA(sla, false)
 			dboxproxy.Add(sla.Name)
 		}
 	}
@@ -391,10 +403,38 @@ func (cm ContainerManager) reloadApps() {
 	//launch apps
 	for _, sla := range slaList {
 		if sla.DataboxType == libDatabox.DataboxTypeApp {
-			cm.LaunchFromSLA(sla)
+			cm.LaunchFromSLA(sla, false)
 			dboxproxy.Add(sla.Name)
 		}
 	}
+
+}
+
+// launchAppStore start the app store driver
+func (cm ContainerManager) launchAppStore() {
+
+	//strip the repo tag from the image to get the name
+	name := strings.Split(cm.Options.AppServerImage, "/")[1]
+
+	sla := libDatabox.SLA{
+		Name:        name,
+		DataboxType: libDatabox.DataboxTypeDriver,
+		ResourceRequirements: libDatabox.ResourceRequirements{
+			Store: "core-store",
+		},
+		ExternalWhitelist: []libDatabox.ExternalWhitelist{
+			libDatabox.ExternalWhitelist{
+				Urls:        []string{"https://github.com", "https://www.github.com"},
+				Description: "Needed to access the manifests stored on github",
+			},
+		},
+	}
+
+	err := cm.LaunchFromSLA(sla, false)
+	libDatabox.ChkErr(err)
+
+	_, err = cm.WaitForService(name, 10)
+	libDatabox.ChkErr(err)
 
 }
 
@@ -404,7 +444,7 @@ func (cm ContainerManager) launchCMStore() string {
 
 	sla := libDatabox.SLA{
 		Name:        "container-manager",
-		DataboxType: "Driver",
+		DataboxType: libDatabox.DataboxTypeDriver,
 		ResourceRequirements: libDatabox.ResourceRequirements{
 			Store: "core-store",
 		},

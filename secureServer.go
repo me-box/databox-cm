@@ -245,7 +245,7 @@ func ServeSecure(cm *ContainerManager, password string) {
 
 		//TODO check and return an error!!!
 		libDatabox.Debug("/api/install LaunchFromSLA")
-		go cm.LaunchFromSLA(sla)
+		go cm.LaunchFromSLA(sla, true)
 
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		w.WriteHeader(http.StatusOK)
