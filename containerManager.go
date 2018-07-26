@@ -29,7 +29,7 @@ import (
 type ContainerManager struct {
 	cli                *client.Client
 	ArbiterClient      *libDatabox.ArbiterClient
-	CoreNetworkClient  libDatabox.CoreNetworkClient
+	CoreNetworkClient  *CoreNetworkClient
 	CoreStoreClient    *libDatabox.CoreStoreClient
 	Request            *http.Client
 	DATABOX_DNS_IP     string
@@ -51,7 +51,7 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 	request := libDatabox.NewDataboxHTTPsAPIWithPaths("/certs/containerManager.crt")
 	ac, err := libDatabox.NewArbiterClient("/certs/arbiterToken-container-manager", "/run/secrets/ZMQ_PUBLIC_KEY", "tcp://arbiter:4444")
 	libDatabox.ChkErr(err)
-	cnc := libDatabox.NewCoreNetworkClient("/certs/arbiterToken-databox-network", request)
+	cnc := NewCoreNetworkClient("/certs/arbiterToken-databox-network", request)
 
 	cm := ContainerManager{
 		cli:                cli,
@@ -130,10 +130,12 @@ func (cm ContainerManager) Start() {
 
 	//start default drivers (driver-app-store, driver-export)
 	cm.launchAppStore()
+	cm.launchUI()
 
 	//start the webUI and API
 	go ServeInsecure()
 	go ServeSecure(&cm, password)
+	go CmZestAPI(&cm)
 
 	libDatabox.Info("Container Manager Ready and waiting")
 
@@ -411,13 +413,75 @@ func (cm ContainerManager) reloadApps() {
 }
 
 // launchAppStore start the app store driver
-func (cm ContainerManager) launchAppStore() {
+func (cm ContainerManager) launchUI() {
 
-	//strip the repo tag from the image to get the name
-	name := strings.Split(cm.Options.AppServerImage, "/")[1]
+	name := "core-ui"
 
 	sla := libDatabox.SLA{
 		Name:        name,
+		Image:       cm.Options.CoreUIImage,
+		DataboxType: libDatabox.DataboxTypeApp,
+		Datasources: []libDatabox.DataSource{
+			libDatabox.DataSource{
+				Type:          "databox:container-manager:api",
+				Required:      true,
+				Name:          "container-manager:api",
+				Clientid:      "CM_API",
+				Granularities: []string{},
+				Hypercat: libDatabox.HypercatItem{
+					ItemMetadata: []interface{}{
+						libDatabox.RelValPairBool{
+							Rel: "urn:X-databox:rels:isActuator",
+							Val: true,
+						},
+					},
+					Href: "tcp://container-manager-store-core-store:5555/api",
+				},
+			},
+			libDatabox.DataSource{
+				Type:          "databox:manifests:app",
+				Required:      true,
+				Name:          "databox Apps",
+				Clientid:      "APPS",
+				Granularities: []string{},
+				Hypercat: libDatabox.HypercatItem{
+					ItemMetadata: []interface{}{},
+					Href:         "tcp://core-app-store-core-store:5555/app",
+				},
+			},
+			libDatabox.DataSource{
+				Type:          "databox:manifests:driver",
+				Required:      true,
+				Name:          "databox Drivers",
+				Clientid:      "DRIVERS",
+				Granularities: []string{},
+				Hypercat: libDatabox.HypercatItem{
+					ItemMetadata: []interface{}{},
+					Href:         "tcp://core-app-store-core-store:5555/driver",
+				},
+			},
+		},
+	}
+
+	err := cm.LaunchFromSLA(sla, false)
+	libDatabox.ChkErr(err)
+
+	_, err = cm.WaitForService(name, 10)
+	libDatabox.ChkErr(err)
+
+}
+
+// launchAppStore start the app store driver
+func (cm ContainerManager) launchAppStore() {
+
+	//TODO fix naming and add to proxy :-)
+	//strip the repo tag from the image to get the name
+
+	name := "core-app-store"
+
+	sla := libDatabox.SLA{
+		Name:        name,
+		Image:       cm.Options.AppServerImage,
 		DataboxType: libDatabox.DataboxTypeDriver,
 		ResourceRequirements: libDatabox.ResourceRequirements{
 			Store: "core-store",
@@ -452,7 +516,7 @@ func (cm ContainerManager) launchCMStore() string {
 
 	requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store
 
-	cm.launchStore("core-store", requiredStoreName, libDatabox.NetworkConfig{NetworkName: "databox-system-net", DNS: cm.DATABOX_DNS_IP})
+	cm.launchStore("core-store", requiredStoreName, NetworkConfig{NetworkName: "databox-system-net", DNS: cm.DATABOX_DNS_IP})
 	cm.addPermissionsFromSLA(sla)
 
 	_, err := cm.WaitForService(requiredStoreName, 10)
@@ -486,9 +550,15 @@ func (cm ContainerManager) calculateRegistryUrlFromSLA(sla libDatabox.SLA) strin
 	return registryUrl
 }
 
-func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerName string, netConf libDatabox.NetworkConfig) (swarm.ServiceSpec, types.ServiceCreateOptions, []string) {
+func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerName string, netConf NetworkConfig) (swarm.ServiceSpec, types.ServiceCreateOptions, []string) {
 
 	registry := cm.calculateRegistryUrlFromSLA(sla)
+
+	imageName := sla.Name
+	if sla.Image != "" {
+		//let some sla specify the exact image name which is different to container name
+		imageName = sla.Image
+	}
 
 	service := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
@@ -497,7 +567,7 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
 				Hostname: localContainerName,
-				Image:    registry + sla.Name + ":" + cm.Options.Version,
+				Image:    registry + imageName + ":" + cm.Options.Version,
 				Labels:   map[string]string{"databox.type": "driver"},
 
 				Env: []string{
@@ -529,9 +599,15 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 	return service, serviceOptions, []string{"arbiter"}
 }
 
-func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName string, netConf libDatabox.NetworkConfig) (swarm.ServiceSpec, types.ServiceCreateOptions, []string) {
+func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName string, netConf NetworkConfig) (swarm.ServiceSpec, types.ServiceCreateOptions, []string) {
 
 	registry := cm.calculateRegistryUrlFromSLA(sla)
+
+	imageName := sla.Name
+	if sla.Image != "" {
+		//let some sla specify the exact image name which is different to container name
+		imageName = sla.Image
+	}
 
 	service := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
@@ -540,7 +616,7 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
 				Hostname: localContainerName,
-				Image:    registry + sla.Name + ":" + cm.Options.Version,
+				Image:    registry + imageName + ":" + cm.Options.Version,
 				Labels:   map[string]string{"databox.type": "app"},
 
 				Env: []string{
@@ -595,7 +671,7 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 	return service, serviceOptions, networksToConnect
 }
 
-func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName string, netConf libDatabox.NetworkConfig) string {
+func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName string, netConf NetworkConfig) string {
 
 	//Check to see if the store already exists !!
 	storeFilter := filters.NewArgs()
