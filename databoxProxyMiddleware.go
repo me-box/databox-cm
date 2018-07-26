@@ -13,7 +13,6 @@ import (
 
 type DataboxProxyMiddleware struct {
 	mutex      sync.Mutex
-	proxyList  map[string]string
 	httpClient *http.Client
 	next       http.Handler
 }
@@ -28,7 +27,6 @@ func NewProxyMiddleware(rootCertPath string) *DataboxProxyMiddleware {
 	d := &DataboxProxyMiddleware{
 		mutex:      sync.Mutex{},
 		httpClient: h,
-		proxyList:  make(map[string]string),
 	}
 
 	return d
@@ -53,7 +51,14 @@ func (d *DataboxProxyMiddleware) proxyWebSocket(w http.ResponseWriter, r *http.R
 
 	parts := strings.Split(r.URL.Path, "/")
 
-	if _, ok := d.proxyList[parts[1]]; ok == false {
+	//lets proxy all ui request for now
+	//proxy is bit of a hack for now but the proxy is moving to the core-network at some point soon
+	/*if _, ok := d.proxyList[parts[1]]; ok == false {
+		//no need to proxy
+		next.ServeHTTP(w, r)
+		return
+	}*/
+	if len(parts) < 3 || parts[2] != "ui" {
 		//no need to proxy
 		next.ServeHTTP(w, r)
 		return
@@ -142,7 +147,14 @@ func (d *DataboxProxyMiddleware) proxyWebSocket(w http.ResponseWriter, r *http.R
 func (d *DataboxProxyMiddleware) proxyHTTP(w http.ResponseWriter, r *http.Request, next http.Handler) {
 	parts := strings.Split(r.URL.Path, "/")
 
-	if _, ok := d.proxyList[parts[1]]; ok == false {
+	//lets proxy all ui request for now
+	//proxy is bit of a hack for now but the proxy is moving to the core-network at some point soon
+	/*if _, ok := d.proxyList[parts[1]]; ok == false {
+		//no need to proxy
+		next.ServeHTTP(w, r)
+		return
+	}*/
+	if len(parts) < 3 || parts[2] != "ui" {
 		//no need to proxy
 		next.ServeHTTP(w, r)
 		return
@@ -186,28 +198,4 @@ func (d *DataboxProxyMiddleware) proxyHTTP(w http.ResponseWriter, r *http.Reques
 	wg.Wait()
 
 	return
-}
-
-func (d *DataboxProxyMiddleware) Add(containerName string) {
-	//d.mutex.Lock()
-	//defer d.mutex.Unlock()
-	d.proxyList[containerName] = containerName
-	return
-}
-
-func (d *DataboxProxyMiddleware) Del(containerName string) {
-	//d.mutex.Lock()
-	//defer d.mutex.Unlock()
-	_, ok := d.proxyList[containerName]
-	if ok {
-		delete(d.proxyList, containerName)
-	}
-	return
-}
-
-func (d *DataboxProxyMiddleware) Exists(containerName string) bool {
-	//d.mutex.Lock()
-	//defer d.mutex.Unlock()
-	_, ok := d.proxyList[containerName]
-	return ok
 }
