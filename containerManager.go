@@ -441,6 +441,26 @@ func (cm ContainerManager) launchUI() {
 				},
 			},
 			libDatabox.DataSource{
+				Type:          "databox:container-manager:data",
+				Required:      true,
+				Name:          "container-manager:data",
+				Clientid:      "CM_DATA",
+				Granularities: []string{},
+				Hypercat: libDatabox.HypercatItem{
+					ItemMetadata: []interface{}{
+						libDatabox.RelValPairBool{
+							Rel: "urn:X-databox:rels:isActuator",
+							Val: false,
+						},
+						libDatabox.RelValPair{
+							Rel: "urn:X-databox:rels:hasDatasourceid",
+							Val: "data",
+						},
+					},
+					Href: "tcp://container-manager-core-store:5555/kv/data",
+				},
+			},
+			libDatabox.DataSource{
 				Type:          "databox:manifests:app",
 				Required:      true,
 				Name:          "databox Apps",
