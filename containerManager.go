@@ -434,8 +434,12 @@ func (cm ContainerManager) launchUI() {
 							Rel: "urn:X-databox:rels:isActuator",
 							Val: true,
 						},
+						libDatabox.RelValPair{
+							Rel: "urn:X-databox:rels:hasDatasourceid",
+							Val: "api",
+						},
 					},
-					Href: "tcp://container-manager-store-core-store:5555/api",
+					Href: "tcp://container-manager-core-store:5555/kv/api",
 				},
 			},
 			libDatabox.DataSource{
@@ -445,8 +449,13 @@ func (cm ContainerManager) launchUI() {
 				Clientid:      "APPS",
 				Granularities: []string{},
 				Hypercat: libDatabox.HypercatItem{
-					ItemMetadata: []interface{}{},
-					Href:         "tcp://core-app-store-core-store:5555/app",
+					ItemMetadata: []interface{}{
+						libDatabox.RelValPair{
+							Rel: "urn:X-databox:rels:hasDatasourceid",
+							Val: "apps",
+						},
+					},
+					Href: "tcp://core-app-store-core-store:5555/kv/apps",
 				},
 			},
 			libDatabox.DataSource{
@@ -456,8 +465,13 @@ func (cm ContainerManager) launchUI() {
 				Clientid:      "DRIVERS",
 				Granularities: []string{},
 				Hypercat: libDatabox.HypercatItem{
-					ItemMetadata: []interface{}{},
-					Href:         "tcp://core-app-store-core-store:5555/driver",
+					ItemMetadata: []interface{}{
+						libDatabox.RelValPair{
+							Rel: "urn:X-databox:rels:hasDatasourceid",
+							Val: "drivers",
+						},
+					},
+					Href: "tcp://core-app-store-core-store:5555/kv/drivers",
 				},
 			},
 		},
@@ -473,9 +487,6 @@ func (cm ContainerManager) launchUI() {
 
 // launchAppStore start the app store driver
 func (cm ContainerManager) launchAppStore() {
-
-	//TODO fix naming and add to proxy :-)
-	//strip the repo tag from the image to get the name
 
 	name := "core-app-store"
 
@@ -554,10 +565,10 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 
 	registry := cm.calculateRegistryUrlFromSLA(sla)
 
-	imageName := sla.Name
+	imageName := registry + sla.Name + ":" + cm.Options.Version
 	if sla.Image != "" {
-		//let some sla specify the exact image name which is different to container name
-		imageName = sla.Image
+		//let some sla's specify the exact image name which is different to container name
+		imageName = sla.Image + ":" + cm.Options.Version
 	}
 
 	service := swarm.ServiceSpec{
@@ -567,7 +578,7 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
 				Hostname: localContainerName,
-				Image:    registry + imageName + ":" + cm.Options.Version,
+				Image:    imageName,
 				Labels:   map[string]string{"databox.type": "driver"},
 
 				Env: []string{
@@ -603,10 +614,10 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 
 	registry := cm.calculateRegistryUrlFromSLA(sla)
 
-	imageName := sla.Name
+	imageName := registry + sla.Name + ":" + cm.Options.Version
 	if sla.Image != "" {
-		//let some sla specify the exact image name which is different to container name
-		imageName = sla.Image
+		//let some sla's specify the exact image name which is different to container name
+		imageName = sla.Image + ":" + cm.Options.Version
 	}
 
 	service := swarm.ServiceSpec{
@@ -616,9 +627,8 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
 				Hostname: localContainerName,
-				Image:    registry + imageName + ":" + cm.Options.Version,
+				Image:    imageName,
 				Labels:   map[string]string{"databox.type": "app"},
-
 				Env: []string{
 					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
 					"DATABOX_LOCAL_NAME=" + localContainerName,

@@ -26,8 +26,10 @@ func ServeSecure(cm *ContainerManager, password string) {
 	r := mux.NewRouter()
 
 	dboxproxy = NewProxyMiddleware("/certs/containerManager.crt")
-	//proxy to the arbiter ui
+	//proxy to the core components (bit of a hack for now but the proxy is moving to the core-network at some point soon)
 	dboxproxy.Add("arbiter")
+	dboxproxy.Add("core-ui")
+	dboxproxy.Add("core-app-store")
 
 	dboxauth := NewAuthMiddleware(password, dboxproxy)
 

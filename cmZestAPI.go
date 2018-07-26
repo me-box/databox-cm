@@ -41,7 +41,10 @@ func CmZestAPI(cm *ContainerManager) {
 						libDatabox.Err("Install comand received invalid JSON " + err.Error())
 					}
 				}
-				if ObserveResponse.Key == "listDataSources" {
+				if ObserveResponse.Key == "restart" {
+					libDatabox.Err("Not implemented")
+				}
+				if ObserveResponse.Key == "uninstall" {
 					libDatabox.Err("Not implemented")
 				}
 			}
