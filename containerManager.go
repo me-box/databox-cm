@@ -30,7 +30,7 @@ type ContainerManager struct {
 	cli                *client.Client
 	ArbiterClient      *libDatabox.ArbiterClient
 	CoreNetworkClient  *CoreNetworkClient
-	CoreStoreClient    *libDatabox.CoreStoreClient
+	CmgrStoreClient    *libDatabox.CoreStoreClient
 	Request            *http.Client
 	DATABOX_DNS_IP     string
 	DATABOX_ROOT_CA_ID string
@@ -91,8 +91,8 @@ func (cm ContainerManager) Start() {
 	cm.cmStoreURL = cm.launchCMStore()
 
 	//setup the cm to log to the store
-	cm.CoreStoreClient = libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", cm.cmStoreURL, false)
-	l, err := libDatabox.New(cm.CoreStoreClient, cm.Options.EnableDebugLogging)
+	cm.CmgrStoreClient = libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", cm.cmStoreURL, false)
+	l, err := libDatabox.New(cm.CmgrStoreClient, cm.Options.EnableDebugLogging)
 	if err != nil {
 		libDatabox.Err("Filed to set up logging to store. " + err.Error())
 	}
@@ -100,7 +100,7 @@ func (cm ContainerManager) Start() {
 	cm.Logger.Debug("CM logs going to the cm store")
 
 	//setup the cmStore
-	cm.Store = NewCMStore(cm.CoreStoreClient)
+	cm.Store = NewCMStore(cm.CmgrStoreClient)
 
 	//clear the saved slas if needed
 	if cm.Options.ClearSLAs && err == nil {
@@ -398,7 +398,6 @@ func (cm ContainerManager) reloadApps() {
 	for _, sla := range slaList {
 		if sla.DataboxType == libDatabox.DataboxTypeDriver {
 			cm.LaunchFromSLA(sla, false)
-			dboxproxy.Add(sla.Name)
 		}
 	}
 
@@ -406,7 +405,6 @@ func (cm ContainerManager) reloadApps() {
 	for _, sla := range slaList {
 		if sla.DataboxType == libDatabox.DataboxTypeApp {
 			cm.LaunchFromSLA(sla, false)
-			dboxproxy.Add(sla.Name)
 		}
 	}
 

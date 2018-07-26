@@ -26,10 +26,6 @@ func ServeSecure(cm *ContainerManager, password string) {
 	r := mux.NewRouter()
 
 	dboxproxy = NewProxyMiddleware("/certs/containerManager.crt")
-	//proxy to the core components (bit of a hack for now but the proxy is moving to the core-network at some point soon)
-	dboxproxy.Add("arbiter")
-	dboxproxy.Add("core-ui")
-	dboxproxy.Add("core-app-store")
 
 	dboxauth := NewAuthMiddleware(password, dboxproxy)
 
@@ -243,7 +239,6 @@ func ServeSecure(cm *ContainerManager, password string) {
 
 		//add to proxy
 		libDatabox.Debug("/api/install dboxproxy.Add " + sla.Name)
-		dboxproxy.Add(sla.Name)
 
 		//TODO check and return an error!!!
 		libDatabox.Debug("/api/install LaunchFromSLA")
@@ -317,8 +312,6 @@ func ServeSecure(cm *ContainerManager, password string) {
 			return
 		}
 		libDatabox.Info("[/api/uninstall] uninstalling " + jsonBody.Name)
-
-		dboxproxy.Del(jsonBody.Name)
 
 		go cm.Uninstall(jsonBody.Name)
 
