@@ -12,6 +12,19 @@ import (
 	libDatabox "github.com/toshbrown/lib-go-databox"
 )
 
+//data required for an install request
+type installRequest struct {
+	Manifest libDatabox.Manifest `json:manifest`
+}
+
+type restartRequest struct {
+	name string
+}
+
+type uninstallRequest struct {
+	name string
+}
+
 func CmZestAPI(cm *ContainerManager) {
 
 	//
@@ -53,9 +66,6 @@ func CmZestAPI(cm *ContainerManager) {
 	go populateDataSources(cm)
 	go populateServiceStatus(cm)
 
-	//Wait for a quit message
-	quit := make(chan int)
-	<-quit // blocks until quit is written to. Which is never for now!!
 }
 
 func processAPICommands(cm *ContainerManager) {
@@ -68,25 +78,54 @@ func processAPICommands(cm *ContainerManager) {
 			select {
 			case ObserveResponse := <-ObserveResponseChan:
 				if ObserveResponse.Key == "install" {
-					var sla libDatabox.SLA
-					err := json.Unmarshal(ObserveResponse.Data, &sla)
+					var installData installRequest
+					err := json.Unmarshal(ObserveResponse.Data, &installData)
 					if err == nil {
+						sla := convertManifestToSLA(installData)
 						go cm.LaunchFromSLA(sla, false)
 					} else {
 						libDatabox.Err("Install command received invalid JSON " + err.Error())
 					}
 				}
 				if ObserveResponse.Key == "restart" {
-					libDatabox.Err("Not implemented")
+					var request restartRequest
+					err := json.Unmarshal(ObserveResponse.Data, &request)
+					if err == nil {
+						go cm.Restart(request.name)
+					} else {
+						libDatabox.Err("Restart command received invalid JSON " + err.Error())
+					}
 				}
 				if ObserveResponse.Key == "uninstall" {
-					libDatabox.Err("Not implemented")
+					var request uninstallRequest
+					err := json.Unmarshal(ObserveResponse.Data, &request)
+					if err == nil {
+						go cm.Uninstall(request.name)
+					} else {
+						libDatabox.Err("Uninstall command received invalid JSON " + err.Error())
+					}
 				}
 			}
 		}
 	}
 }
 
+func convertManifestToSLA(ir installRequest) libDatabox.SLA {
+
+	sla := libDatabox.SLA{
+		Name:                 ir.Manifest.Name,
+		DataboxType:          ir.Manifest.DataboxType,
+		Repository:           ir.Manifest.Repository,
+		ExportWhitelists:     ir.Manifest.ExportWhitelists,
+		ExternalWhitelist:    ir.Manifest.ExternalWhitelist,
+		ResourceRequirements: ir.Manifest.ResourceRequirements,
+		DisplayName:          ir.Manifest.DisplayName,
+		StoreURL:             ir.Manifest.StoreURL,
+		//Registry:             ir.Manifest., TODO is this needed??
+		Datasources: ir.Manifest.DataSources,
+	}
+	return sla
+}
 func populateServiceStatus(cm *ContainerManager) {
 
 	//reset the list after restart
@@ -101,6 +140,7 @@ func populateServiceStatus(cm *ContainerManager) {
 	}
 
 	for {
+		libDatabox.Debug("[populateServiceStatus] Updating ...")
 		services, _ := cm.cli.ServiceList(context.Background(), types.ServiceListOptions{})
 		res := []listResult{}
 		for _, service := range services {
@@ -158,6 +198,7 @@ func populateDataSources(cm *ContainerManager) {
 	cm.CmgrStoreClient.KVJSON.Write("data", "dataSources", []byte("{}"))
 
 	for {
+		libDatabox.Debug("[populateDataSources] Updating ...")
 		hyperCatRoot, err := cm.ArbiterClient.GetRootDataSourceCatalogue()
 		if err != nil {
 			libDatabox.Err("[populateDataSources] GetRootDataSourceCatalogue " + err.Error())

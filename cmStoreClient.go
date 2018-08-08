@@ -19,7 +19,7 @@ func NewCMStore(store *libDatabox.CoreStoreClient) *CMStore {
 		Description:    "Persistant SLA storage",
 		ContentType:    "json",
 		Vendor:         "databox",
-		DataSourceType: "SLA",
+		DataSourceType: "databox:container-manager:SLA",
 		DataSourceID:   slaStoreID,
 		StoreType:      "kv",
 		IsActuator:     false,

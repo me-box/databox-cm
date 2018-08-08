@@ -183,10 +183,11 @@ func (d *Databox) startCoreNetworkRelay() {
 
 	d.pullImageIfRequired(config.Image)
 
-	containerCreateCreatedBody, ccErr := d.cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, containerName)
-	libDatabox.ChkErrFatal(ccErr)
+	containerCreateCreatedBody, err := d.cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, containerName)
+	libDatabox.ChkErrFatal(err)
 
-	d.cli.ContainerStart(context.Background(), containerCreateCreatedBody.ID, types.ContainerStartOptions{})
+	err = d.cli.ContainerStart(context.Background(), containerCreateCreatedBody.ID, types.ContainerStartOptions{})
+	libDatabox.ChkErrFatal(err)
 }
 
 func (d *Databox) pullImageIfRequired(image string) {

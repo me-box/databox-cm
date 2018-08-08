@@ -492,6 +492,22 @@ func (cm ContainerManager) launchUI() {
 					Href: "tcp://core-app-store-core-store:5555/kv/drivers",
 				},
 			},
+			libDatabox.DataSource{
+				Type:          "databox:manifests:all",
+				Required:      true,
+				Name:          "databox manifests",
+				Clientid:      "ALL",
+				Granularities: []string{},
+				Hypercat: libDatabox.HypercatItem{
+					ItemMetadata: []interface{}{
+						libDatabox.RelValPair{
+							Rel: "urn:X-databox:rels:hasDatasourceid",
+							Val: "all",
+						},
+					},
+					Href: "tcp://core-app-store-core-store:5555/kv/all",
+				},
+			},
 		},
 	}
 
@@ -929,7 +945,7 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 			}
 			if isActuator == true {
 				libDatabox.Debug("Adding write permissions for Actuator " + datasourceName + " on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/"+datasourceName+"/*", "POST", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "POST", []string{})
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
 				}

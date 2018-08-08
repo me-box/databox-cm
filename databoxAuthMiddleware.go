@@ -5,13 +5,25 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	libDatabox "github.com/toshbrown/lib-go-databox"
 )
 
-var allowedStaticPaths = map[string]string{"css": "", "js": "", "icons": "", "img": "", "": "", "cordova.js": ""}
+var allowedStaticPaths = map[string]string{
+	"css":             "",
+	"js":              "",
+	"icons":           "",
+	"img":             "",
+	"":                "",
+	"cordova.js":      "",
+	"/core-ui/ui":     "",
+	"/core-ui/ui/js":  "",
+	"/core-ui/ui/css": "",
+	"/core-ui/ui/img": "",
+}
 
 type DataboxAuthMiddleware struct {
 	sync.Mutex
@@ -40,7 +52,14 @@ func (d *DataboxAuthMiddleware) AuthMiddleware(next http.Handler) http.Handler {
 
 		if _, ok := allowedStaticPaths[parts[1]]; ok {
 			//its allowed no auth needed
-			//libDatabox.Debug("its allowed no auth needed")
+			libDatabox.Debug("its allowed no auth needed")
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if _, ok := allowedStaticPaths[filepath.Dir(r.URL.Path)]; ok {
+			//its allowed no auth needed
+			libDatabox.Debug("its path allowed no auth needed")
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -71,7 +90,7 @@ func (d *DataboxAuthMiddleware) AuthMiddleware(next http.Handler) http.Handler {
 				return
 			}
 
-			libDatabox.Err("Password validation error!")
+			libDatabox.Err("Password validation error!" + r.Header.Get("Authorization"))
 			w.WriteHeader(http.StatusUnauthorized)
 			fmt.Fprintf(w, "Authorization Required")
 			return

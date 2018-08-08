@@ -1,13 +1,12 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
+	"strings"
+	"sync"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/gorilla/mux"
 	qrcode "github.com/skip2/go-qrcode"
@@ -19,25 +18,19 @@ var dboxproxy *DataboxProxyMiddleware
 func ServeSecure(cm *ContainerManager, password string) {
 
 	//pull required databox components from the ContainerManager
-	cli := cm.cli
-	ac := cm.ArbiterClient
+	//cli := cm.cli
+	//ac := cm.ArbiterClient
 
 	//start the https server for the app UI
 	r := mux.NewRouter()
 
 	dboxproxy = NewProxyMiddleware("/certs/containerManager.crt")
+	databoxHttpsClient := libDatabox.NewDataboxHTTPsAPIWithPaths("/certs/containerManager.crt")
 
 	dboxauth := NewAuthMiddleware(password, dboxproxy)
 
 	libDatabox.Debug("Installing databox Middlewares")
 	r.Use(dboxauth.AuthMiddleware, dboxproxy.ProxyMiddleware)
-
-	r.HandleFunc("/api/cmlogs", func(w http.ResponseWriter, r *http.Request) {
-		jsonString := cm.Logger.GetLastNLogEntriesRaw(100)
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-		w.WriteHeader(http.StatusOK)
-		w.Write(jsonString)
-	}).Methods("GET")
 
 	r.HandleFunc("/api/qrcode.png", func(w http.ResponseWriter, r *http.Request) {
 
@@ -81,7 +74,7 @@ func ServeSecure(cm *ContainerManager, password string) {
 
 	})
 
-	r.HandleFunc("/api/datasource/list", func(w http.ResponseWriter, r *http.Request) {
+	/*r.HandleFunc("/api/datasource/list", func(w http.ResponseWriter, r *http.Request) {
 		libDatabox.Debug("/api/datasource/list called")
 		hyperCatRoot, err := ac.GetRootDataSourceCatalogue()
 		if err != nil {
@@ -114,9 +107,9 @@ func ServeSecure(cm *ContainerManager, password string) {
 		libDatabox.Debug("[/api/datasource/list] sending cat to client: " + string(jsonString))
 		w.Write(jsonString)
 
-	}).Methods("GET")
+	}).Methods("GET")*/
 
-	r.HandleFunc("/api/store/cat/{store}", func(w http.ResponseWriter, r *http.Request) {
+	/*r.HandleFunc("/api/store/cat/{store}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		store := vars["store"]
 
@@ -136,9 +129,9 @@ func ServeSecure(cm *ContainerManager, password string) {
 		w.WriteHeader(http.StatusOK)
 		w.Write(catStr)
 
-	}).Methods("GET")
+	}).Methods("GET")*/
 
-	r.HandleFunc("/api/installed/list", func(w http.ResponseWriter, r *http.Request) {
+	/*r.HandleFunc("/api/installed/list", func(w http.ResponseWriter, r *http.Request) {
 
 		filters := filters.NewArgs()
 		//filters.Add("label", "databox.type")
@@ -155,7 +148,7 @@ func ServeSecure(cm *ContainerManager, password string) {
 			libDatabox.Err("error encoding json " + err.Error())
 		}
 
-	}).Methods("GET")
+	}).Methods("GET")*/
 
 	type listResult struct {
 		Name         string          `json:"name"`
@@ -165,7 +158,7 @@ func ServeSecure(cm *ContainerManager, password string) {
 		Status       swarm.TaskState `json:"status"`
 	}
 
-	r.HandleFunc("/api/{type}/list", func(w http.ResponseWriter, r *http.Request) {
+	/*r.HandleFunc("/api/{type}/list", func(w http.ResponseWriter, r *http.Request) {
 
 		vars := mux.Vars(r)
 		serviceType := vars["type"]
@@ -219,9 +212,9 @@ func ServeSecure(cm *ContainerManager, password string) {
 			libDatabox.Err("[/api/{type}/list] error encoding json " + err.Error())
 		}
 
-	}).Methods("GET")
+	}).Methods("GET")*/
 
-	r.HandleFunc("/api/install", func(w http.ResponseWriter, r *http.Request) {
+	/*r.HandleFunc("/api/install", func(w http.ResponseWriter, r *http.Request) {
 
 		defer r.Body.Close()
 		slaString, _ := ioutil.ReadAll(r.Body)
@@ -250,9 +243,9 @@ func ServeSecure(cm *ContainerManager, password string) {
 
 		libDatabox.Debug("/api/install finished")
 
-	}).Methods("POST")
+	}).Methods("POST")*/
 
-	r.HandleFunc("/api/restart", func(w http.ResponseWriter, r *http.Request) {
+	/*r.HandleFunc("/api/restart", func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 
@@ -287,9 +280,9 @@ func ServeSecure(cm *ContainerManager, password string) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":200,"msg":"Success"}`))
 		return
-	}).Methods("POST")
+	}).Methods("POST")*/
 
-	r.HandleFunc("/api/uninstall", func(w http.ResponseWriter, r *http.Request) {
+	/*r.HandleFunc("/api/uninstall", func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		bodyString, err := ioutil.ReadAll(r.Body)
 		type jsonStruct struct {
@@ -319,10 +312,54 @@ func ServeSecure(cm *ContainerManager, password string) {
 
 		w.Write([]byte(`{"status":200,"msg":"Success"}`))
 
-	}).Methods("POST")
+	}).Methods("POST")*/
 
-	static := http.FileServer(http.Dir("./www/https"))
-	r.PathPrefix("/").Handler(static)
+	//static := http.FileServer(http.Dir("./www/https"))
+	//r.PathPrefix("/").Handler(static)
+
+	//Proxy to the core-ui-app
+	r.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxy(w, r, databoxHttpsClient)
+	})
 
 	libDatabox.ChkErrFatal(http.ListenAndServeTLS(":443", "./certs/container-manager.pem", "./certs/container-manager.pem", r))
+}
+
+func proxy(w http.ResponseWriter, r *http.Request, databoxHttpsClient *http.Client) {
+	parts := strings.Split(r.URL.Path, "/")
+	var RequestURI string
+	if len(parts) < 2 {
+		RequestURI = "https://core-ui:8080/ui/"
+	} else {
+		RequestURI = "https://core-ui:8080/ui/" + strings.Join(parts[2:], "/")
+	}
+	libDatabox.Debug("SecureServer proxing from: " + r.URL.RequestURI() + " to: " + RequestURI)
+	var wg sync.WaitGroup
+	copy := func() {
+		defer wg.Done()
+		req, err := http.NewRequest(r.Method, RequestURI, r.Body)
+		for name, value := range r.Header {
+			req.Header.Set(name, value[0])
+		}
+		resp, err := databoxHttpsClient.Do(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		defer resp.Body.Close()
+		defer r.Body.Close()
+
+		for k, v := range resp.Header {
+			w.Header().Set(k, v[0])
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+
+	}
+
+	wg.Add(1)
+	go copy()
+	wg.Wait()
+
 }
