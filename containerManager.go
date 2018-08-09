@@ -41,6 +41,9 @@ type ContainerManager struct {
 	Logger             *libDatabox.Logger
 	Store              *CMStore
 	Options            *libDatabox.ContainerManagerOptions
+	AppStoreName       string
+	CoreIUName         string
+	CoreStoreName      string
 }
 
 // New returns a configured ContainerManager
@@ -63,6 +66,15 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 		ZMQ_PUBLIC_KEY_ID:  zmqPublicId,
 		ZMQ_PRIVATE_KEY_ID: zmqPrivateId,
 		Options:            opt,
+		AppStoreName:       "app-store",
+		CoreIUName:         "core-ui",
+		CoreStoreName:      "core-store",
+	}
+
+	if opt.Arch != "" {
+		cm.ARCH = "-" + opt.Arch
+	} else {
+		cm.ARCH = ""
 	}
 
 	return cm
@@ -270,7 +282,7 @@ func (cm ContainerManager) Restart(name string) error {
 	//Stash the old container IP
 	oldIP := ""
 	for netName := range contList[0].NetworkSettings.Networks {
-		serviceName := strings.Replace(name, "-core-store", "", 1) //TODO hardcoded -core-store
+		serviceName := strings.Replace(name, "-"+cm.CoreStoreName, "", 1)
 		if strings.Contains(netName, serviceName) {
 			oldIP = contList[0].NetworkSettings.Networks[netName].IPAMConfig.IPv4Address
 			libDatabox.Debug("Old IP for " + netName + " is " + oldIP)
@@ -291,7 +303,7 @@ func (cm ContainerManager) Restart(name string) error {
 	//Stash the new container IP
 	newIP := ""
 	for netName := range newCont.NetworkSettings.Networks {
-		serviceName := strings.Replace(name, "-core-store", "", 1)
+		serviceName := strings.Replace(name, "-"+cm.CoreStoreName, "", 1)
 		if strings.Contains(netName, serviceName) {
 			newIP = newCont.NetworkSettings.Networks[netName].IPAMConfig.IPv4Address
 			libDatabox.Debug("IP  IP for " + netName + " is " + newIP)
@@ -371,7 +383,7 @@ func (cm ContainerManager) WaitForService(name string, timeout int) (types.Conta
 		time.Sleep(time.Second)
 		loopCount++
 		if loopCount > timeout {
-			return types.Container{}, errors.New("Service has not restarted after " + strconv.Itoa(timeout) + " seconds !!")
+			return types.Container{}, errors.New("Service " + name + " has not restarted after " + strconv.Itoa(timeout) + " seconds !!")
 		}
 		continue
 
@@ -413,11 +425,11 @@ func (cm ContainerManager) reloadApps() {
 // launchAppStore start the app store driver
 func (cm ContainerManager) launchUI() {
 
-	name := "core-ui"
+	name := cm.CoreIUName
 
 	sla := libDatabox.SLA{
 		Name:        name,
-		Image:       cm.Options.CoreUIImage,
+		Image:       cm.Options.CoreUIImage + cm.ARCH + ":" + cm.Options.Version,
 		DataboxType: libDatabox.DataboxTypeApp,
 		Datasources: []libDatabox.DataSource{
 			libDatabox.DataSource{
@@ -437,7 +449,7 @@ func (cm ContainerManager) launchUI() {
 							Val: "api",
 						},
 					},
-					Href: "tcp://container-manager-core-store:5555/kv/api",
+					Href: "tcp://container-manager-" + cm.CoreStoreName + ":5555/kv/api",
 				},
 			},
 			libDatabox.DataSource{
@@ -457,7 +469,7 @@ func (cm ContainerManager) launchUI() {
 							Val: "data",
 						},
 					},
-					Href: "tcp://container-manager-core-store:5555/kv/data",
+					Href: "tcp://container-manager-" + cm.CoreStoreName + ":5555/kv/data",
 				},
 			},
 			libDatabox.DataSource{
@@ -473,7 +485,7 @@ func (cm ContainerManager) launchUI() {
 							Val: "apps",
 						},
 					},
-					Href: "tcp://core-app-store-core-store:5555/kv/apps",
+					Href: "tcp://" + cm.AppStoreName + "-" + cm.CoreStoreName + ":5555/kv/apps",
 				},
 			},
 			libDatabox.DataSource{
@@ -489,7 +501,7 @@ func (cm ContainerManager) launchUI() {
 							Val: "drivers",
 						},
 					},
-					Href: "tcp://core-app-store-core-store:5555/kv/drivers",
+					Href: "tcp://" + cm.AppStoreName + "-" + cm.CoreStoreName + ":5555/kv/drivers",
 				},
 			},
 			libDatabox.DataSource{
@@ -505,7 +517,7 @@ func (cm ContainerManager) launchUI() {
 							Val: "all",
 						},
 					},
-					Href: "tcp://core-app-store-core-store:5555/kv/all",
+					Href: "tcp://" + cm.AppStoreName + "-" + cm.CoreStoreName + ":5555" + "/kv/all",
 				},
 			},
 		},
@@ -521,15 +533,14 @@ func (cm ContainerManager) launchUI() {
 
 // launchAppStore start the app store driver
 func (cm ContainerManager) launchAppStore() {
-
-	name := "core-app-store"
+	name := cm.AppStoreName
 
 	sla := libDatabox.SLA{
 		Name:        name,
-		Image:       cm.Options.AppServerImage,
+		Image:       cm.Options.AppServerImage + cm.ARCH + ":" + cm.Options.Version,
 		DataboxType: libDatabox.DataboxTypeDriver,
 		ResourceRequirements: libDatabox.ResourceRequirements{
-			Store: "core-store",
+			Store: cm.CoreStoreName,
 		},
 		ExternalWhitelist: []libDatabox.ExternalWhitelist{
 			libDatabox.ExternalWhitelist{
@@ -555,19 +566,19 @@ func (cm ContainerManager) launchCMStore() string {
 		Name:        "container-manager",
 		DataboxType: libDatabox.DataboxTypeDriver,
 		ResourceRequirements: libDatabox.ResourceRequirements{
-			Store: "core-store",
+			Store: cm.CoreStoreName,
 		},
 	}
 
 	requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store
 
-	cm.launchStore("core-store", requiredStoreName, NetworkConfig{NetworkName: "databox-system-net", DNS: cm.DATABOX_DNS_IP})
+	cm.launchStore(cm.CoreStoreName, requiredStoreName, NetworkConfig{NetworkName: "databox-system-net", DNS: cm.DATABOX_DNS_IP})
 	cm.addPermissionsFromSLA(sla)
 
 	_, err := cm.WaitForService(requiredStoreName, 10)
 	libDatabox.ChkErr(err)
 
-	return "tcp://container-manager-core-store:5555"
+	return "tcp://container-manager-" + cm.CoreStoreName + ":5555"
 }
 
 func (cm ContainerManager) calculateRegistryUrlFromSLA(sla libDatabox.SLA) string {
@@ -599,10 +610,10 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 
 	registry := cm.calculateRegistryUrlFromSLA(sla)
 
-	imageName := registry + sla.Name + ":" + cm.Options.Version
+	imageName := registry + sla.Name + cm.ARCH + ":" + cm.Options.Version
 	if sla.Image != "" {
 		//let some sla's specify the exact image name which is different to container name
-		imageName = sla.Image + ":" + cm.Options.Version
+		imageName = sla.Image
 	}
 
 	service := swarm.ServiceSpec{
@@ -648,10 +659,10 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 
 	registry := cm.calculateRegistryUrlFromSLA(sla)
 
-	imageName := registry + sla.Name + ":" + cm.Options.Version
+	imageName := registry + sla.Name + cm.ARCH + ":" + cm.Options.Version
 	if sla.Image != "" {
 		//let some sla's specify the exact image name which is different to container name
-		imageName = sla.Image + ":" + cm.Options.Version
+		imageName = sla.Image
 	}
 
 	service := swarm.ServiceSpec{
@@ -733,7 +744,7 @@ func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName s
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
 				Hostname: requiredStoreName,
-				Image:    cm.Options.DefaultStoreImage + ":" + cm.Options.Version,
+				Image:    cm.Options.DefaultStoreImage + cm.ARCH + ":" + cm.Options.Version,
 				Labels:   map[string]string{"databox.type": "store"},
 				Env: []string{
 					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
@@ -1028,7 +1039,7 @@ func (cm ContainerManager) startExportService() {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
-				Image:   cm.Options.ExportServiceImage + ":" + cm.Options.Version,
+				Image:   cm.Options.ExportServiceImage + cm.ARCH + ":" + cm.Options.Version,
 				Env:     []string{"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444"},
 				Secrets: cm.genorateSecrets("export-service", libDatabox.DataboxTypeStore),
 			},

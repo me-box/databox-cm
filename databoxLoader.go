@@ -55,7 +55,7 @@ func (d *Databox) Start() (string, string, string) {
 
 	d.DATABOX_ARBITER_ID = d.createSecretFromFileIfNotExists("DATABOX_ARBITER.pem", "./certs/arbiter.pem")
 
-	d.DATABOX_PEM = d.createSecretFromFileIfNotExists("DATABOX.pem", "./certs/container-manager.pem") //TODO sort out certs!!
+	d.DATABOX_PEM = d.createSecretFromFileIfNotExists("DATABOX.pem", "./certs/container-manager.pem") 
 	d.DATABOX_NETWORK_KEY = d.createSecretFromFileIfNotExists("DATABOX_NETWORK_KEY", "./certs/arbiterToken-databox-network")
 
 	//make ZMQ secrests
@@ -120,7 +120,7 @@ func (d *Databox) startCoreNetwork() {
 	libDatabox.ChkErr(err)
 
 	config := &container.Config{
-		Image:  d.Options.CoreNetworkImage + ":" + d.Options.Version,
+		Image:  d.Options.CoreNetworkImage + "-" + d.Options.Arch + ":" + d.Options.Version,
 		Labels: map[string]string{"databox.type": "databox-network"},
 		Cmd:    []string{"-f", "/tmp/relay"},
 	}
@@ -163,7 +163,7 @@ func (d *Databox) startCoreNetwork() {
 func (d *Databox) startCoreNetworkRelay() {
 
 	config := &container.Config{
-		Image:  d.Options.CoreNetworkRelayImage + ":" + d.Options.Version,
+		Image:  d.Options.CoreNetworkRelayImage + "-" + d.Options.Arch + ":" + d.Options.Version,
 		Labels: map[string]string{"databox.type": "databox-network"},
 		Cmd:    []string{"-f", "/tmp/relay", "-h", d.Options.InternalIPs[0]}, //TODO can we pass all the IPs here?
 	}
@@ -307,7 +307,7 @@ func (d *Databox) startArbiter() {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
-				Image: d.Options.ArbiterImage + ":" + d.Options.Version,
+				Image: d.Options.ArbiterImage + "-" + d.Options.Arch + ":" + d.Options.Version,
 				Secrets: []*swarm.SecretReference{
 					&swarm.SecretReference{
 						SecretID:   d.CM_KEY_ID,
