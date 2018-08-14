@@ -14,15 +14,15 @@ import (
 
 //data required for an install request
 type installRequest struct {
-	Manifest libDatabox.Manifest `json:manifest`
+	Manifest libDatabox.Manifest `json:"manifest"`
 }
 
 type restartRequest struct {
-	name string
+	Name string `json:"id"`
 }
 
 type uninstallRequest struct {
-	name string
+	Name string `json:"id"`
 }
 
 func CmZestAPI(cm *ContainerManager) {
@@ -82,7 +82,7 @@ func processAPICommands(cm *ContainerManager) {
 					err := json.Unmarshal(ObserveResponse.Data, &installData)
 					if err == nil {
 						sla := convertManifestToSLA(installData)
-						go cm.LaunchFromSLA(sla, false)
+						go cm.LaunchFromSLA(sla, true)
 					} else {
 						libDatabox.Err("Install command received invalid JSON " + err.Error())
 					}
@@ -90,8 +90,11 @@ func processAPICommands(cm *ContainerManager) {
 				if ObserveResponse.Key == "restart" {
 					var request restartRequest
 					err := json.Unmarshal(ObserveResponse.Data, &request)
-					if err == nil {
-						go cm.Restart(request.name)
+					libDatabox.Debug("ObserveResponse data = " + string(ObserveResponse.Data))
+					if err == nil && request.Name != "" {
+						go cm.Restart(request.Name)
+					} else if err == nil {
+						libDatabox.Err("Restart command received invalid JSON request.name is blank")
 					} else {
 						libDatabox.Err("Restart command received invalid JSON " + err.Error())
 					}
@@ -99,8 +102,11 @@ func processAPICommands(cm *ContainerManager) {
 				if ObserveResponse.Key == "uninstall" {
 					var request uninstallRequest
 					err := json.Unmarshal(ObserveResponse.Data, &request)
-					if err == nil {
-						go cm.Uninstall(request.name)
+					libDatabox.Debug("ObserveResponse data = " + string(ObserveResponse.Data))
+					if err == nil && request.Name != "" {
+						go cm.Uninstall(request.Name)
+					} else if err == nil {
+						libDatabox.Err("Uninstall command received invalid JSON request.name is blank")
 					} else {
 						libDatabox.Err("Uninstall command received invalid JSON " + err.Error())
 					}
