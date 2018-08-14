@@ -1,8 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"time"
+
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"strings"
 	"sync"
@@ -12,21 +17,27 @@ import (
 )
 
 type DataboxProxyMiddleware struct {
-	mutex      sync.Mutex
-	httpClient *http.Client
-	next       http.Handler
+	mutex             sync.Mutex
+	httpClient        *http.Client
+	next              http.Handler
+	databoxCACertPool *x509.CertPool
 }
 
 func NewProxyMiddleware(rootCertPath string) *DataboxProxyMiddleware {
 
 	var h *http.Client
+	var roots *x509.CertPool
 	if rootCertPath != "" {
 		h = libDatabox.NewDataboxHTTPsAPIWithPaths(rootCertPath)
+		CM_HTTPS_CA_ROOT_CERT, _ := ioutil.ReadFile(rootCertPath)
+		roots = x509.NewCertPool()
+		roots.AppendCertsFromPEM([]byte(CM_HTTPS_CA_ROOT_CERT))
 	}
 
 	d := &DataboxProxyMiddleware{
-		mutex:      sync.Mutex{},
-		httpClient: h,
+		mutex:             sync.Mutex{},
+		httpClient:        h,
+		databoxCACertPool: roots,
 	}
 
 	return d
@@ -49,6 +60,8 @@ func (d *DataboxProxyMiddleware) ProxyMiddleware(next http.Handler) http.Handler
 
 func (d *DataboxProxyMiddleware) proxyWebSocket(w http.ResponseWriter, r *http.Request, next http.Handler) {
 
+	libDatabox.Debug("[proxyWebSocket] started")
+
 	parts := strings.Split(r.URL.Path, "/")
 
 	//lets proxy all ui request for now
@@ -66,7 +79,15 @@ func (d *DataboxProxyMiddleware) proxyWebSocket(w http.ResponseWriter, r *http.R
 
 	backendURL := "wss://" + parts[1] + ":8080/" + strings.Join(parts[2:], "/")
 
-	dialer := &websocket.Dialer{}
+	libDatabox.Debug("[proxyWebSocket] proxing to " + backendURL)
+
+	dialer := &websocket.Dialer{
+		TLSClientConfig: &tls.Config{
+			RootCAs: d.databoxCACertPool,
+		},
+		HandshakeTimeout:  5 * time.Second,
+		EnableCompression: false,
+	}
 
 	// Pass headers from the incoming request to the dialer to forward them to
 	// the final destinations.
@@ -83,6 +104,7 @@ func (d *DataboxProxyMiddleware) proxyWebSocket(w http.ResponseWriter, r *http.R
 
 	connBackend, resp, err := dialer.Dial(backendURL, requestHeader)
 	if err != nil {
+		libDatabox.Debug("[ERROR proxyWebSocket] Could not open websocket connection to backend " + err.Error())
 		http.Error(w, "Could not open websocket connection to backend", http.StatusBadRequest)
 		return
 	}
@@ -98,6 +120,7 @@ func (d *DataboxProxyMiddleware) proxyWebSocket(w http.ResponseWriter, r *http.R
 
 	conn, err := websocket.Upgrade(w, r, upgradeHeader, 1024, 1024)
 	if err != nil {
+		libDatabox.Debug("[ERROR proxyWebSocket] Could not open websocket connection " + err.Error())
 		http.Error(w, "Could not open websocket connection", http.StatusBadRequest)
 	}
 	defer connBackend.Close()
@@ -126,6 +149,7 @@ func (d *DataboxProxyMiddleware) proxyWebSocket(w http.ResponseWriter, r *http.R
 		}
 	}
 
+	libDatabox.Debug("[proxyWebSocket] copying data")
 	go copy(conn, connBackend, errClient)
 	go copy(connBackend, conn, errBackend)
 
@@ -138,7 +162,7 @@ func (d *DataboxProxyMiddleware) proxyWebSocket(w http.ResponseWriter, r *http.R
 
 	}
 	if e, ok := err.(*websocket.CloseError); !ok || e.Code == websocket.CloseAbnormalClosure {
-		libDatabox.Err(message + " " + err.Error())
+		libDatabox.Err("[ERROR proxyWebSocket]" + message + " " + err.Error())
 	}
 
 	return
@@ -171,7 +195,6 @@ func (d *DataboxProxyMiddleware) proxyHTTP(w http.ResponseWriter, r *http.Reques
 	var wg sync.WaitGroup
 
 	copy := func() {
-		defer wg.Done()
 		req, err := http.NewRequest(r.Method, RequestURI, r.Body)
 		for name, value := range r.Header {
 			req.Header.Set(name, value[0])
@@ -179,18 +202,18 @@ func (d *DataboxProxyMiddleware) proxyHTTP(w http.ResponseWriter, r *http.Reques
 		resp, err := d.httpClient.Do(req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			wg.Done()
 			return
 		}
-
-		defer resp.Body.Close()
-		defer r.Body.Close()
 
 		for k, v := range resp.Header {
 			w.Header().Set(k, v[0])
 		}
 		w.WriteHeader(resp.StatusCode)
 		io.Copy(w, resp.Body)
-
+		resp.Body.Close()
+		r.Body.Close()
+		wg.Done()
 	}
 
 	wg.Add(1)
