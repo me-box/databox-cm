@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-	"os"
 	"strings"
 	"time"
 
@@ -55,7 +54,7 @@ func (d *Databox) Start() (string, string, string) {
 
 	d.DATABOX_ARBITER_ID = d.createSecretFromFileIfNotExists("DATABOX_ARBITER.pem", "./certs/arbiter.pem")
 
-	d.DATABOX_PEM = d.createSecretFromFileIfNotExists("DATABOX.pem", "./certs/container-manager.pem") 
+	d.DATABOX_PEM = d.createSecretFromFileIfNotExists("DATABOX.pem", "./certs/container-manager.pem")
 	d.DATABOX_NETWORK_KEY = d.createSecretFromFileIfNotExists("DATABOX_NETWORK_KEY", "./certs/arbiterToken-databox-network")
 
 	//make ZMQ secrests
@@ -238,10 +237,8 @@ func (d *Databox) updateContainerManager() {
 		//we have already updated the service!!!
 		libDatabox.Debug("container-manager service is up to date")
 
-		f, _ := os.OpenFile("/ect/resolv.conf", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-		defer f.Close()
-		f.WriteString("nameserver " + d.DATABOX_DNS_IP)
-
+		err := ioutil.WriteFile("/etc/resolv.conf", []byte("nameserver "+d.DATABOX_DNS_IP+"\noptions ndots:0 ndots:0\n"), 644)
+		libDatabox.ChkErr(err)
 		return
 	}
 
