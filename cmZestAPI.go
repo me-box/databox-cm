@@ -18,11 +18,11 @@ type installRequest struct {
 }
 
 type restartRequest struct {
-	Name string `json:"id"`
+	Name string `json:"name"`
 }
 
 type uninstallRequest struct {
-	Name string `json:"id"`
+	Name string `json:"name"`
 }
 
 func CmZestAPI(cm *ContainerManager) {
@@ -90,7 +90,9 @@ func processAPICommands(cm *ContainerManager) {
 				if ObserveResponse.Key == "restart" {
 					var request restartRequest
 					err := json.Unmarshal(ObserveResponse.Data, &request)
+					libDatabox.ChkErr(err)
 					libDatabox.Debug("ObserveResponse data = " + string(ObserveResponse.Data))
+					libDatabox.Debug("request.Name data = " + request.Name)
 					if err == nil && request.Name != "" {
 						go cm.Restart(request.Name)
 					} else if err == nil {
@@ -102,7 +104,9 @@ func processAPICommands(cm *ContainerManager) {
 				if ObserveResponse.Key == "uninstall" {
 					var request uninstallRequest
 					err := json.Unmarshal(ObserveResponse.Data, &request)
+					libDatabox.ChkErr(err)
 					libDatabox.Debug("ObserveResponse data = " + string(ObserveResponse.Data))
+					libDatabox.Debug("request.Name data = " + request.Name)
 					if err == nil && request.Name != "" {
 						go cm.Uninstall(request.Name)
 					} else if err == nil {
