@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io/ioutil"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
+	qrcode "github.com/skip2/go-qrcode"
 	libDatabox "github.com/toshbrown/lib-go-databox"
 )
 
@@ -65,7 +67,7 @@ func CmZestAPI(cm *ContainerManager) {
 	cm.CmgrStoreClient.RegisterDatasource(DataMetadata)
 	go populateDataSources(cm)
 	go populateServiceStatus(cm)
-
+	go populateMobileAppQrCodeAndCerts(cm)
 }
 
 func processAPICommands(cm *ContainerManager) {
@@ -136,6 +138,63 @@ func convertManifestToSLA(ir installRequest) libDatabox.SLA {
 	}
 	return sla
 }
+
+func populateMobileAppQrCodeAndCerts(cm *ContainerManager) {
+
+	//Make the public key available
+	var pubCertFullPath = "/certs/containerManagerPub.crt"
+	pubCert, err := ioutil.ReadFile(pubCertFullPath)
+	libDatabox.ChkErr(err)
+	if err == nil {
+		libDatabox.Info("pubCert = " + string(pubCert))
+		err := cm.CmgrStoreClient.KVBin.Write("data", "cert.pem", pubCert)
+		libDatabox.ChkErr(err)
+	}
+
+	var pubCertFullPathDer = "/certs/containerManagerPub.der"
+	pubCertDer, err := ioutil.ReadFile(pubCertFullPathDer)
+	libDatabox.ChkErr(err)
+	if err == nil {
+		err := cm.CmgrStoreClient.KVBin.Write("data", "cert.der", pubCertDer)
+		libDatabox.ChkErr(err)
+	}
+
+	//make the config qr-code  available
+	type qrData struct {
+		IP         string   `json:"ip"`
+		IPs        []string `json:"ips"`
+		IPExternal string   `json:"ipExternal"`
+		Hostname   string   `json:hostname`
+		Token      string   `json:"token"`
+	}
+
+	password, err := cm.Store.LoadPassword()
+	libDatabox.ChkErr(err)
+
+	data := qrData{
+		IP:         cm.Options.InternalIPs[0],
+		IPs:        cm.Options.InternalIPs,
+		IPExternal: cm.Options.ExternalIP,
+		Hostname:   cm.Options.Hostname,
+		Token:      "Token=" + password,
+	}
+
+	json, err := json.Marshal(data)
+	if err != nil {
+		libDatabox.Err("[/qrcode.png] Error parsing JSON " + err.Error())
+		return
+	}
+	var png []byte
+	png, err = qrcode.Encode(string(json), qrcode.Medium, 256)
+	if err != nil {
+		libDatabox.Err("[/api/qrcode.png] Error making  qrcode" + err.Error())
+		return
+	}
+
+	err = cm.CmgrStoreClient.KVBin.Write("data", "qrcode.png", png)
+	libDatabox.ChkErr(err)
+}
+
 func populateServiceStatus(cm *ContainerManager) {
 
 	//reset the list after restart
@@ -150,7 +209,7 @@ func populateServiceStatus(cm *ContainerManager) {
 	}
 
 	for {
-		libDatabox.Debug("[populateServiceStatus] Updating ...")
+		//libDatabox.Debug("[populateServiceStatus] Updating ...")
 		services, _ := cm.cli.ServiceList(context.Background(), types.ServiceListOptions{})
 		res := []listResult{}
 		for _, service := range services {
@@ -208,7 +267,7 @@ func populateDataSources(cm *ContainerManager) {
 	cm.CmgrStoreClient.KVJSON.Write("data", "dataSources", []byte("{}"))
 
 	for {
-		libDatabox.Debug("[populateDataSources] Updating ...")
+		//libDatabox.Debug("[populateDataSources] Updating ...")
 		hyperCatRoot, err := cm.ArbiterClient.GetRootDataSourceCatalogue()
 		if err != nil {
 			libDatabox.Err("[populateDataSources] GetRootDataSourceCatalogue " + err.Error())

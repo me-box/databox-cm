@@ -190,7 +190,7 @@ func (d *DataboxProxyMiddleware) proxyHTTP(w http.ResponseWriter, r *http.Reques
 		RequestURI = RequestURI + "?" + r.URL.RawQuery
 	}
 
-	libDatabox.Debug("Proxying internal request to  " + RequestURI)
+	//libDatabox.Debug("Proxying internal request to  " + RequestURI)
 
 	var wg sync.WaitGroup
 

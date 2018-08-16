@@ -140,14 +140,16 @@ func (cm ContainerManager) Start() {
 	}
 	libDatabox.Info("Password=" + password)
 
+	//expose the CM API through the store before starting the UI
+	go CmZestAPI(&cm)
+
 	//start default drivers (driver-app-store, driver-export)
 	cm.launchAppStore()
 	cm.launchUI()
 
-	//start the webUI and API
+	//start the webUI
 	go ServeInsecure()
 	go ServeSecure(&cm, password)
-	go CmZestAPI(&cm)
 
 	libDatabox.Info("Container Manager Ready and waiting")
 
@@ -197,17 +199,21 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 			service.TaskTemplate.ContainerSpec.Env,
 			"DATABOX_ZMQ_DEALER_ENDPOINT=tcp://"+requiredStoreName+":5556",
 		)
-		cm.launchStore(sla.ResourceRequirements.Store, requiredStoreName, netConf)
-		requiredNetworks = append(requiredNetworks, requiredStoreName)
-
-		cm.WaitForService(requiredStoreName, 10)
 
 	}
 
 	libDatabox.Debug("networksToConnect" + strings.Join(requiredNetworks, ","))
 	cm.CoreNetworkClient.ConnectEndpoints(localContainerName, requiredNetworks)
 
+	//do this after the networks are configured
+	if requiredStoreName != "" {
+		cm.launchStore(sla.ResourceRequirements.Store, requiredStoreName, netConf)
+		cm.WaitForService(requiredStoreName, 10)
+	}
+
 	cm.pullImage(service.TaskTemplate.ContainerSpec.Image)
+
+	cm.addPermissionsFromSLA(sla)
 
 	serviceCreateResponse, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
 	if err != nil {
@@ -216,8 +222,6 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 	}
 
 	fmt.Println("serviceCreateResponse.Warnings::", serviceCreateResponse.Warnings)
-
-	cm.addPermissionsFromSLA(sla)
 
 	if save {
 		//save the sla for persistence over restarts

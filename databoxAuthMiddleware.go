@@ -13,16 +13,19 @@ import (
 )
 
 var allowedStaticPaths = map[string]string{
-	"css":             "",
-	"js":              "",
-	"icons":           "",
-	"img":             "",
-	"":                "",
-	"cordova.js":      "",
-	"/core-ui/ui":     "",
-	"/core-ui/ui/js":  "",
-	"/core-ui/ui/css": "",
-	"/core-ui/ui/img": "",
+	"css":                  "",
+	"js":                   "",
+	"icons":                "",
+	"img":                  "",
+	"":                     "",
+	"cordova.js":           "",
+	"/core-ui/ui":          "",
+	"/core-ui/ui/js":       "",
+	"/core-ui/ui/css":      "",
+	"/core-ui/ui/img":      "",
+	"/core-ui/ui/cert.pem": "",
+	"/ui/cert.pem":         "",
+	"/cert.pem":            "",
 }
 
 type DataboxAuthMiddleware struct {
