@@ -899,14 +899,17 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 
 	//set export permissions from export-whitelist
 	if len(sla.ExportWhitelists) > 0 {
-		urlsString := "destination = \""
+		urlsString := "destination = [\""
 		for i, whiteList := range sla.ExportWhitelists {
 			urlsString = urlsString + whiteList.Url
 			if i < len(sla.ExportWhitelists) {
 				urlsString = urlsString + ","
 			}
 		}
-		urlsString = urlsString + "\""
+		//remove trailing ,
+		urlsString = strings.TrimRight(urlsString, ",")
+		//close the quote
+		urlsString = urlsString + `"]`
 
 		libDatabox.Debug("Adding Export permissions for " + localContainerName + " on " + urlsString)
 
@@ -974,7 +977,7 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 				libDatabox.Err("Adding write permissions for Datasource " + err.Error())
 			}
 
-			libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + " on " + datasourceEndpoint.Hostname() + "/*")
+			libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + "/* on " + datasourceEndpoint.Hostname())
 			err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", []string{})
 			if err != nil {
 				libDatabox.Err("Adding write permissions for Datasource " + err.Error())
@@ -1006,6 +1009,7 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 			libDatabox.Err("Adding delete permissions for dependent store " + err.Error())
 		}
 
+		libDatabox.Debug("Adding read permissions for dependent store " + localContainerName + " on " + requiredStoreName + "/*")
 		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "GET", []string{})
 		if err != nil {
 			libDatabox.Err("Adding read permissions for dependent store " + err.Error())
