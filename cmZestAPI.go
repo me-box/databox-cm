@@ -146,7 +146,6 @@ func populateMobileAppQrCodeAndCerts(cm *ContainerManager) {
 	pubCert, err := ioutil.ReadFile(pubCertFullPath)
 	libDatabox.ChkErr(err)
 	if err == nil {
-		libDatabox.Info("pubCert = " + string(pubCert))
 		err := cm.CmgrStoreClient.KVBin.Write("data", "cert.pem", pubCert)
 		libDatabox.ChkErr(err)
 	}
@@ -258,7 +257,7 @@ func populateServiceStatus(cm *ContainerManager) {
 			libDatabox.Err("[populateDataSources] Error " + err.Error())
 		}
 		//sleep for a bit
-		time.Sleep(time.Second * 15)
+		time.Sleep(time.Second * 1)
 	}
 }
 
@@ -283,7 +282,7 @@ func populateDataSources(cm *ContainerManager) {
 			sc := libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", storeURL, false)
 			storeCat, err := sc.GetStoreDataSourceCatalogue(item.Href)
 			if err != nil {
-				libDatabox.Err("[populateDataSources] Error GetStoreDataSourceCatalogue " + item.Href + " " + err.Error())
+				libDatabox.Warn("[populateDataSources] GetStoreDataSourceCatalogue " + item.Href + " " + err.Error())
 			}
 			for _, ds := range storeCat.Items {
 				datasources = append(datasources, ds)
