@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 
-	libDatabox "github.com/toshbrown/lib-go-databox"
+	libDatabox "github.com/me-box/lib-go-databox"
 )
 
 type CMStore struct {

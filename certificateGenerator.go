@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	libDatabox "github.com/toshbrown/lib-go-databox"
+	libDatabox "github.com/me-box/lib-go-databox"
 )
 
 func GenCert(CAFilePath string, commonName string, ips []string, hostNames []string) []byte {

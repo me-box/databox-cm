@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	libDatabox "github.com/toshbrown/lib-go-databox"
+	libDatabox "github.com/me-box/lib-go-databox"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
