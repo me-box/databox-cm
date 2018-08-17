@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	libDatabox "github.com/toshbrown/lib-go-databox"
@@ -49,7 +50,7 @@ type ContainerManager struct {
 // New returns a configured ContainerManager
 func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId string, opt *libDatabox.ContainerManagerOptions) ContainerManager {
 
-	cli, _ := client.NewEnvClient() //TODO store version in ContainerManagerOptions
+	cli, _ := client.NewEnvClient()
 
 	request := libDatabox.NewDataboxHTTPsAPIWithPaths("/certs/containerManager.crt")
 	ac, err := libDatabox.NewArbiterClient("/certs/arbiterToken-container-manager", "/run/secrets/ZMQ_PUBLIC_KEY", "tcp://arbiter:4444")
@@ -92,7 +93,7 @@ func (cm ContainerManager) Start() {
 	}
 
 	//start the export service and register with the Arbiter
-	cm.startExportService()
+	go cm.startExportService()
 
 	//register CM with arbiter - this is needed as the CM now has a store!
 	err = cm.ArbiterClient.RegesterDataboxComponent("container-manager", cm.ArbiterClient.ArbiterToken, libDatabox.DataboxTypeApp)
@@ -144,8 +145,8 @@ func (cm ContainerManager) Start() {
 	go CmZestAPI(&cm)
 
 	//start default drivers (driver-app-store, driver-export)
-	cm.launchAppStore()
-	cm.launchUI()
+	go cm.launchAppStore()
+	go cm.launchUI()
 
 	//start the webUI
 	go ServeInsecure()
@@ -410,19 +411,31 @@ func (cm ContainerManager) reloadApps() {
 	slaList, err := cm.Store.GetAllSLAs()
 	libDatabox.ChkErr(err)
 	libDatabox.Debug("reloadApps slaList len=" + strconv.Itoa(len(slaList)))
+
 	//launch drivers
+	var waitGroup sync.WaitGroup
+	LaunchFromSLAandWait := func(sla libDatabox.SLA, wg *sync.WaitGroup) {
+		cm.LaunchFromSLA(sla, false)
+		wg.Done()
+	}
+
 	for _, sla := range slaList {
 		if sla.DataboxType == libDatabox.DataboxTypeDriver {
-			cm.LaunchFromSLA(sla, false)
+			waitGroup.Add(1)
+			go LaunchFromSLAandWait(sla, &waitGroup)
 		}
 	}
+	//wait for all drivers to install before we install tha apps
+	waitGroup.Wait()
 
 	//launch apps
 	for _, sla := range slaList {
 		if sla.DataboxType == libDatabox.DataboxTypeApp {
-			cm.LaunchFromSLA(sla, false)
+			waitGroup.Add(1)
+			go LaunchFromSLAandWait(sla, &waitGroup)
 		}
 	}
+	waitGroup.Wait()
 
 }
 
