@@ -55,7 +55,14 @@ func (d *DataboxAuthMiddleware) AuthMiddleware(next http.Handler) http.Handler {
 
 		if _, ok := allowedStaticPaths[parts[1]]; ok {
 			//its allowed no auth needed
-			libDatabox.Debug("its allowed no auth needed")
+			//libDatabox.Debug("its allowed no auth needed")
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if _, ok := allowedStaticPaths[r.URL.Path]; ok {
+			//its allowed no auth needed
+			//libDatabox.Debug("its allowed no auth needed")
 			next.ServeHTTP(w, r)
 			return
 		}
