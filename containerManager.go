@@ -961,27 +961,19 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 			datasourceEndpoint, _ := url.Parse(ds.Hypercat.Href)
 			datasourceName := datasourceEndpoint.Path
 
+			libDatabox.Debug("[adding permissions for] datasource" + ds.Name)
+			libDatabox.Debug(ds.Name + " IsActuator " + strconv.FormatBool(libDatabox.IsActuator(ds)))
 			//Deal with Actuators
-			isActuator := false
-			for _, item := range ds.Hypercat.ItemMetadata {
-				switch item.(type) {
-				case libDatabox.RelValPairBool:
-					if item.(libDatabox.RelValPairBool).Rel == "urn:X-databox:rels:isActuator" && item.(libDatabox.RelValPairBool).Val == true {
-						isActuator = true
-						break
-					}
-				default:
-					// we are only interested in libDatabox.RelValPairBool
-				}
-			}
-			if isActuator == true {
+			if libDatabox.IsActuator(ds) {
 				libDatabox.Debug("Adding write permissions for Actuator " + datasourceName + " on " + datasourceEndpoint.Hostname())
 				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "POST", []string{})
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
 				}
 			}
-
+			if ds.Type == "personalLoggerActuator" {
+				libDatabox.Info("[TOM] its all over we should have added permissions by now!!!")
+			}
 			libDatabox.Debug("Adding read permissions for /status  on " + datasourceEndpoint.Hostname())
 			err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/status", "GET", []string{})
 			if err != nil {
