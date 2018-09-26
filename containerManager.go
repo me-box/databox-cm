@@ -965,15 +965,19 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 			libDatabox.Debug(ds.Name + " IsActuator " + strconv.FormatBool(libDatabox.IsActuator(ds)))
 			//Deal with Actuators
 			if libDatabox.IsActuator(ds) {
-				libDatabox.Debug("Adding write permissions for Actuator " + datasourceName + " on " + datasourceEndpoint.Hostname())
+				libDatabox.Debug("Adding write permissions for Actuator " + datasourceName + "/* on " + datasourceEndpoint.Hostname())
 				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "POST", []string{})
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
 				}
+
+				libDatabox.Debug("Adding write permissions for Actuator " + datasourceName + " on " + datasourceEndpoint.Hostname())
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "POST", []string{})
+				if err != nil {
+					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
+				}
 			}
-			if ds.Type == "personalLoggerActuator" {
-				libDatabox.Info("[TOM] its all over we should have added permissions by now!!!")
-			}
+
 			libDatabox.Debug("Adding read permissions for /status  on " + datasourceEndpoint.Hostname())
 			err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/status", "GET", []string{})
 			if err != nil {
