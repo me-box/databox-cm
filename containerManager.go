@@ -646,6 +646,7 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 				Env: []string{
 					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
 					"DATABOX_LOCAL_NAME=" + localContainerName,
+					"DATABOX_VERSION="+cm.Options.Version,
 				},
 				Secrets: cm.genorateSecrets(localContainerName, sla.DataboxType),
 				DNSConfig: &swarm.DNSConfig{
@@ -695,6 +696,7 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
 					"DATABOX_LOCAL_NAME=" + localContainerName,
 					"DATABOX_EXPORT_SERVICE_ENDPOINT=https://export-service:8080",
+					"DATABOX_VERSION="+cm.Options.Version,
 				},
 				Secrets: cm.genorateSecrets(localContainerName, sla.DataboxType),
 				DNSConfig: &swarm.DNSConfig{
