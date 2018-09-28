@@ -18,8 +18,6 @@ import (
 	libDatabox "github.com/me-box/lib-go-databox"
 )
 
-var dboxproxy *DataboxProxyMiddleware
-
 func ServeSecure(cm *ContainerManager, password string) {
 
 	databoxHttpsClient := libDatabox.NewDataboxHTTPsAPIWithPaths("/certs/containerManager.crt")
