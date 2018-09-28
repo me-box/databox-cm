@@ -450,6 +450,26 @@ func (cm ContainerManager) launchUI() {
 		DataboxType: libDatabox.DataboxTypeApp,
 		Datasources: []libDatabox.DataSource{
 			libDatabox.DataSource{
+				Type:          "databox:func:ServiceStatus",
+				Required:      true,
+				Name:          "ServiceStatus",
+				Clientid:      "CM_API_ServiceStatus",
+				Granularities: []string{},
+				Hypercat: libDatabox.HypercatItem{
+					ItemMetadata: []interface{}{
+						libDatabox.RelValPairBool{
+							Rel: "urn:X-databox:rels:isFunc",
+							Val: true,
+						},
+						libDatabox.RelValPair{
+							Rel: "urn:X-databox:rels:hasDatasourceid",
+							Val: "ServiceStatus",
+						},
+					},
+					Href: "tcp://container-manager-" + cm.CoreStoreName + ":5555/",
+				},
+			},
+			libDatabox.DataSource{
 				Type:          "databox:container-manager:api",
 				Required:      true,
 				Name:          "container-manager:api",
@@ -977,6 +997,20 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "POST", []string{})
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
+				}
+			}
+
+			//Deal with databox functions
+			if libDatabox.IsFunc(ds) {
+				libDatabox.Debug("Adding write permissions for functions request /notification/request/" + ds.Name + "/* on " + datasourceEndpoint.Hostname())
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/request/"+ds.Name+"/*", "POST", []string{})
+				if err != nil {
+					libDatabox.Err("Adding write permissions for functions " + err.Error())
+				}
+				libDatabox.Debug("Adding read permissions for functions response /notification/response/" + ds.Name + "/* on " + datasourceEndpoint.Hostname())
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/response/"+ds.Name+"/*", "GET", []string{})
+				if err != nil {
+					libDatabox.Err("Adding write permissions for functions " + err.Error())
 				}
 			}
 

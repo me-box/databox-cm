@@ -29,6 +29,9 @@ type uninstallRequest struct {
 
 func CmZestAPI(cm *ContainerManager) {
 
+	//expose functions
+	cm.CmgrStoreClient.FUNC.Register("databox", "ServiceStatus", libDatabox.ContentTypeJSON, ServiceStatus(cm))
+
 	//
 	//Register and observe API command endpoints
 	//
@@ -68,6 +71,68 @@ func CmZestAPI(cm *ContainerManager) {
 	go populateDataSources(cm)
 	go populateServiceStatus(cm)
 	go populateMobileAppQrCodeAndCerts(cm)
+
+}
+
+func ServiceStatus(cm *ContainerManager) libDatabox.FuncHandler {
+	libDatabox.Info("API: registering ServiceStatus")
+	return func(contnetType libDatabox.StoreContentType, payload []byte) []byte {
+		libDatabox.Info("API: ServiceStatus called contentType=" + string(contnetType) + "Payload=" + string(payload))
+		type listResult struct {
+			Name         string          `json:"name"`
+			Type         string          `json:"type"`
+			DesiredState swarm.TaskState `json:"desiredState"`
+			State        swarm.TaskState `json:"state"`
+			Status       swarm.TaskState `json:"status"`
+		}
+
+		services, _ := cm.cli.ServiceList(context.Background(), types.ServiceListOptions{})
+		res := []listResult{}
+		for _, service := range services {
+
+			_, exists := service.Spec.Labels["databox.type"]
+			if exists == false {
+				//its not a databox service
+				continue
+			}
+
+			lr := listResult{
+				Name: service.Spec.Name,
+				Type: service.Spec.Labels["databox.type"],
+			}
+
+			taskFilters := filters.NewArgs()
+			taskFilters.Add("service", service.Spec.Name)
+			tasks, _ := cm.cli.TaskList(context.Background(), types.TaskListOptions{
+				Filters: taskFilters,
+			})
+			if len(tasks) > 0 {
+				latestTasks := tasks[0]
+				latestTime := latestTasks.UpdatedAt
+
+				for _, t := range tasks {
+					if t.UpdatedAt.After(latestTime) {
+						latestTasks = t
+						latestTime = latestTasks.UpdatedAt
+					}
+				}
+
+				lr.DesiredState = latestTasks.DesiredState
+				lr.State = latestTasks.Status.State
+				lr.Status = latestTasks.Status.State
+			}
+
+			res = append(res, lr)
+		}
+
+		jsonString, err := json.Marshal(res)
+		if err != nil {
+			libDatabox.Err("[ServiceStatus] Error " + err.Error())
+		}
+
+		libDatabox.Info("API: ServiceStatus done returning=" + string(jsonString))
+		return jsonString
+	}
 }
 
 func processAPICommands(cm *ContainerManager) {
