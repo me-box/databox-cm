@@ -76,7 +76,7 @@ func CmZestAPI(cm *ContainerManager) {
 
 func ServiceStatus(cm *ContainerManager) libDatabox.FuncHandler {
 	libDatabox.Info("API: registering ServiceStatus")
-	return func(contnetType libDatabox.StoreContentType, payload []byte) []byte {
+	return func(contnetType libDatabox.StoreContentType, payload []byte) ([]byte, error) {
 		libDatabox.Info("API: ServiceStatus called contentType=" + string(contnetType) + "Payload=" + string(payload))
 		type listResult struct {
 			Name         string          `json:"name"`
@@ -131,7 +131,7 @@ func ServiceStatus(cm *ContainerManager) libDatabox.FuncHandler {
 		}
 
 		libDatabox.Info("API: ServiceStatus done returning=" + string(jsonString))
-		return jsonString
+		return jsonString, nil
 	}
 }
 

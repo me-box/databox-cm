@@ -44,6 +44,13 @@ func NewDataboxLoader(opt *libDatabox.ContainerManagerOptions) Databox {
 func (d *Databox) Start() (string, string, string) {
 
 	libDatabox.Info("ContainerManager Started")
+
+	// when the host is rebooted or docker daemon restarted
+	// all the containers are restored but state is lost.
+	// this leaves databox in a broken state. checkForAndFixBadRestarts
+	// attempts to fix this problem
+	badRestartDetected := d.checkForAndFixBadRestarts()
+
 	//start the core containers
 	d.startCoreNetwork()
 
@@ -64,11 +71,80 @@ func (d *Databox) Start() (string, string, string) {
 	d.ZMQ_SECRET_KEY_ID = d.createSecretIfNotExists("ZMQ_SECRET_KEY", private)
 
 	//SET CM DNS, create secrets and join to databox-system-net will restart the ContainerManager if needed.
-	d.updateContainerManager()
+	d.updateContainerManager(badRestartDetected)
 
 	d.startArbiter()
 
 	return d.DATABOX_ROOT_CA_ID, d.ZMQ_PUBLIC_KEY_ID, d.ZMQ_SECRET_KEY_ID
+}
+
+func (d *Databox) checkForAndFixBadRestarts() bool {
+	ctx := context.Background()
+	f := filters.NewArgs()
+	f.Add("label", "databox.type")
+	services, err := d.cli.ServiceList(ctx, types.ServiceListOptions{Filters: f})
+	//cmServiceID := ""
+	libDatabox.ChkErr(err)
+	if len(services) > 1 { //the cm is running at this point so i would expect one service
+		libDatabox.Warn("Container manager starting up but we have old databox services.")
+		libDatabox.Warn("This was probably caused by a Container manager crash, host reboot, docker daemon restart")
+		libDatabox.Warn("Waitling for docker to settle......")
+		time.Sleep(time.Second * 15)
+		libDatabox.Warn("Starting to clean up......")
+		for _, service := range services {
+			if service.Spec.Name == "container-manager" {
+				//lets not kill ourselves, that's just silly
+				libDatabox.Debug("Skipping container-manager")
+				//cmServiceID = service.ID
+				continue
+			}
+			libDatabox.Info("Removing old databox service " + service.Spec.Name)
+			err := d.cli.ServiceRemove(ctx, service.ID)
+			libDatabox.ChkErr(err)
+		}
+
+		d.removeContainer("databox-network")
+		d.removeContainer("databox-network-relay")
+
+		allNetworks, _ := d.cli.NetworkList(ctx, types.NetworkListOptions{Filters: f})
+		if len(allNetworks) > 0 {
+			for _, network := range allNetworks {
+				libDatabox.Debug("Removing old databox network " + network.Name + " " + network.ID)
+				netInfo, _ := d.cli.NetworkInspect(ctx, network.ID, types.NetworkInspectOptions{})
+				for _, connected := range netInfo.Containers {
+					libDatabox.Debug("Removing databox container form network before delete " + connected.Name)
+					if strings.Contains(connected.Name, "container-manager.") {
+						//lets not kill ourselves, that's just silly
+						libDatabox.Debug("Skipping container-manager")
+						continue
+					}
+					d.cli.NetworkDisconnect(ctx, network.ID, connected.Name, true)
+				}
+				time.Sleep(time.Second * 5)
+				d.cli.NetworkRemove(ctx, network.ID)
+			}
+		}
+
+		allSecrets, _ := d.cli.SecretList(ctx, types.SecretListOptions{})
+		if len(allSecrets) > 0 {
+			for _, sec := range allSecrets {
+				if strings.Contains(sec.Spec.Name, "ZMQ_") {
+					//dont delete the zmq keys
+					continue
+				}
+				libDatabox.Debug("Removing old databox sec " + sec.Spec.Name + " " + sec.ID)
+				err := d.cli.SecretRemove(ctx, sec.ID)
+				libDatabox.ChkErr(err)
+			}
+		}
+
+		libDatabox.Warn("Waitling for docker to recvover ......")
+		time.Sleep(time.Second * 20)
+
+		return true
+	}
+
+	return false
 }
 
 func (d *Databox) getDNSIP() (string, error) {
@@ -79,7 +155,6 @@ func (d *Databox) getDNSIP() (string, error) {
 		Filters: filters,
 	})
 
-	//after CM update we do not need to do this again!!
 	if len(contList) > 0 {
 		//store the databox-network IP to pass as dns server
 		containerJSON, _ := d.cli.ContainerInspect(context.Background(), contList[0].ID)
@@ -113,6 +188,7 @@ func (d *Databox) startCoreNetwork() {
 		Driver:     "overlay",
 		Attachable: true,
 		Internal:   false,
+		Labels:     map[string]string{"databox.type": "databox-network"},
 	}
 
 	_, err := d.cli.NetworkCreate(context.Background(), "databox-system-net", options)
@@ -152,8 +228,11 @@ func (d *Databox) startCoreNetwork() {
 	containerCreateCreatedBody, ccErr := d.cli.ContainerCreate(context.Background(), config, hostConfig, networkingConfig, containerName)
 	libDatabox.ChkErrFatal(ccErr)
 
-	d.cli.ContainerStart(context.Background(), containerCreateCreatedBody.ID, types.ContainerStartOptions{})
+	err = d.cli.ContainerStart(context.Background(), containerCreateCreatedBody.ID, types.ContainerStartOptions{})
+	libDatabox.ChkErrFatal(err)
 	d.DATABOX_DNS_IP, _ = d.getDNSIP()
+
+	libDatabox.Info("[startCoreNetwork] done starting databox-network")
 
 	//start core network relay
 	d.startCoreNetworkRelay()
@@ -163,7 +242,7 @@ func (d *Databox) startCoreNetworkRelay() {
 
 	config := &container.Config{
 		Image:  d.Options.CoreNetworkRelayImage + "-" + d.Options.Arch + ":" + d.Options.Version,
-		Labels: map[string]string{"databox.type": "databox-network"},
+		Labels: map[string]string{"databox.type": "databox-network-relay"},
 		Cmd:    []string{"-f", "/tmp/relay", "-h", d.Options.InternalIPs[0]}, //TODO can we pass all the IPs here?
 	}
 
@@ -220,9 +299,9 @@ func (d *Databox) pullImageIfRequired(image string) {
 	}
 }
 
-func (d *Databox) updateContainerManager() {
+func (d *Databox) updateContainerManager(badRestartDetected bool) {
 
-	//TODO error checking ;-)
+	libDatabox.Info("[updateContainerManager] called")
 
 	d.DATABOX_DNS_IP, _ = d.getDNSIP()
 
@@ -233,9 +312,10 @@ func (d *Databox) updateContainerManager() {
 		Filters: filters,
 	})
 
-	if swarmService[0].Spec.TaskTemplate.ContainerSpec.DNSConfig != nil {
+	libDatabox.Info("[updateContainerManager] updating dns server")
+	if swarmService[0].Spec.TaskTemplate.ContainerSpec.DNSConfig != nil && badRestartDetected == false {
 		//we have already updated the service!!!
-		libDatabox.Debug("container-manager service is up to date")
+		libDatabox.Debug("container-manager service is up to date d.DATABOX_DNS_IP=" + d.DATABOX_DNS_IP)
 
 		err := ioutil.WriteFile("/etc/resolv.conf", []byte("nameserver "+d.DATABOX_DNS_IP+"\noptions ndots:0 ndots:0\n"), 644)
 		libDatabox.ChkErr(err)
@@ -293,7 +373,7 @@ func (d *Databox) updateContainerManager() {
 	//waiting to be rebooted
 	libDatabox.Info("Restarting the Container Manager")
 	time.Sleep(time.Second * 100)
-
+	panic("This should never happen but if it dose lets be noisy")
 }
 
 func (d *Databox) startArbiter() {

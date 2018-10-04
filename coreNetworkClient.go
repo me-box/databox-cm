@@ -87,6 +87,7 @@ func (cnc CoreNetworkClient) PreConfig(localContainerName string, sla libDatabox
 			Internal:   internal,
 			Driver:     "overlay",
 			Attachable: true,
+			Labels:     map[string]string{"databox.type": "databox-network"},
 		})
 		if err != nil {
 			libDatabox.Err("[PreConfig] NetworkCreate Error " + err.Error())
