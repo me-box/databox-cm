@@ -149,7 +149,10 @@ func processAPICommands(cm *ContainerManager) {
 					err := json.Unmarshal(ObserveResponse.Data, &installData)
 					if err == nil {
 						sla := convertManifestToSLA(installData)
-						go cm.LaunchFromSLA(sla, true)
+						go func() {
+							err := cm.LaunchFromSLA(sla, true)
+							libDatabox.ChkErr(err)
+						}()
 					} else {
 						libDatabox.Err("Install command received invalid JSON " + err.Error())
 					}

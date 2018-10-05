@@ -191,6 +191,16 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 		return errors.New("Unsupported image type")
 	}
 
+	cm.pullImage(service.TaskTemplate.ContainerSpec.Image)
+
+	//TODO Check image is available and make some nose if its missing !!!
+	if !cm.imageExists(service.TaskTemplate.ContainerSpec.Image) {
+		return errors.New("Can't install " + localContainerName + " cant find the image " + service.TaskTemplate.ContainerSpec.Image)
+	}
+
+	//Add secrests to container
+	service.TaskTemplate.ContainerSpec.Secrets = cm.genorateSecrets(localContainerName, sla.DataboxType)
+
 	//If we need a store lets create one and set the needed environment variables
 	if requiredStoreName != "" {
 		service.TaskTemplate.ContainerSpec.Env = append(
@@ -211,14 +221,6 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 	if requiredStoreName != "" {
 		cm.launchStore(sla.ResourceRequirements.Store, requiredStoreName, netConf)
 		cm.WaitForService(requiredStoreName, 10)
-	}
-
-	cm.pullImage(service.TaskTemplate.ContainerSpec.Image)
-
-
-	//TODO Check image is available and make some nose if its missing !!!
-	if !cm.imageExists(service.TaskTemplate.ContainerSpec.Image) {
-		return errors.New("Can't install " + localContainerName + " cant find the image " + service.TaskTemplate.ContainerSpec.Image)
 	}
 
 	cm.addPermissionsFromSLA(sla)
@@ -440,7 +442,8 @@ func (cm ContainerManager) reloadApps() {
 	//launch drivers
 	var waitGroup sync.WaitGroup
 	LaunchFromSLAandWait := func(sla libDatabox.SLA, wg *sync.WaitGroup) {
-		cm.LaunchFromSLA(sla, false)
+		err := cm.LaunchFromSLA(sla, false)
+		libDatabox.ChkErr(err)
 		wg.Done()
 	}
 
@@ -693,7 +696,6 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 					"DATABOX_LOCAL_NAME=" + localContainerName,
 					"DATABOX_VERSION=" + cm.Options.Version,
 				},
-				Secrets: cm.genorateSecrets(localContainerName, sla.DataboxType),
 				DNSConfig: &swarm.DNSConfig{
 					Nameservers: []string{netConf.DNS},
 				},
@@ -743,7 +745,6 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 					"DATABOX_EXPORT_SERVICE_ENDPOINT=https://export-service:8080",
 					"DATABOX_VERSION=" + cm.Options.Version,
 				},
-				Secrets: cm.genorateSecrets(localContainerName, sla.DataboxType),
 				DNSConfig: &swarm.DNSConfig{
 					Nameservers: []string{netConf.DNS},
 				},
