@@ -27,23 +27,23 @@ import (
 )
 
 type ContainerManager struct {
-	cli                *client.Client
-	ArbiterClient      *libDatabox.ArbiterClient
-	CoreNetworkClient  *CoreNetworkClient
-	CmgrStoreClient    *libDatabox.CoreStoreClient
-	Request            *http.Client
-	DATABOX_DNS_IP     string
-	DATABOX_ROOT_CA_ID string
-	ZMQ_PUBLIC_KEY_ID  string
-	ZMQ_PRIVATE_KEY_ID string
-	ARCH               string
-	cmStoreURL         string
-	Logger             *libDatabox.Logger
-	Store              *CMStore
-	Options            *libDatabox.ContainerManagerOptions
-	AppStoreName       string
-	CoreIUName         string
-	CoreStoreName      string
+	cli                 *client.Client
+	ArbiterClient       *libDatabox.ArbiterClient
+	CoreNetworkClient   *CoreNetworkClient
+	CmgrStoreClient     *libDatabox.CoreStoreClient
+	Request             *http.Client
+	DATABOX_DNS_IP      string
+	DATABOX_ROOT_CA_ID  string
+	ZMQ_PUBLIC_KEY_ID   string
+	ZMQ_PRIVATE_KEY_ID  string
+	ARCH                string
+	cmStoreURL          string
+	Logger              *libDatabox.Logger
+	Store               *CMStore
+	Options             *libDatabox.ContainerManagerOptions
+	AppStoreName        string
+	CoreIUName          string
+	CoreStoreName       string
 	InstalledComponents map[string]string
 }
 
@@ -58,18 +58,18 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 	cnc := NewCoreNetworkClient("/certs/arbiterToken-databox-network", request)
 
 	cm := ContainerManager{
-		cli:                cli,
-		ArbiterClient:      ac,
-		CoreNetworkClient:  cnc,
-		Request:            request,
-		DATABOX_DNS_IP:     os.Getenv("DATABOX_DNS_IP"),
-		DATABOX_ROOT_CA_ID: rootCASecretId,
-		ZMQ_PUBLIC_KEY_ID:  zmqPublicId,
-		ZMQ_PRIVATE_KEY_ID: zmqPrivateId,
-		Options:            opt,
-		AppStoreName:       "app-store",
-		CoreIUName:         "core-ui",
-		CoreStoreName:      "core-store",
+		cli:                 cli,
+		ArbiterClient:       ac,
+		CoreNetworkClient:   cnc,
+		Request:             request,
+		DATABOX_DNS_IP:      os.Getenv("DATABOX_DNS_IP"),
+		DATABOX_ROOT_CA_ID:  rootCASecretId,
+		ZMQ_PUBLIC_KEY_ID:   zmqPublicId,
+		ZMQ_PRIVATE_KEY_ID:  zmqPrivateId,
+		Options:             opt,
+		AppStoreName:        "app-store",
+		CoreIUName:          "core-ui",
+		CoreStoreName:       "core-store",
 		InstalledComponents: make(map[string]string),
 	}
 
@@ -246,11 +246,10 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 }
 
 //IsInstalled Checks to see a component has been installled
-func (cm *ContainerManager) IsInstalled (name string) bool {
+func (cm *ContainerManager) IsInstalled(name string) bool {
 	_, ok := cm.InstalledComponents[name]
 	return ok
 }
-
 
 func (cm *ContainerManager) imageExists(image string) bool {
 	images, _ := cm.cli.ImageList(context.Background(), types.ImageListOptions{})
@@ -380,7 +379,7 @@ func (cm ContainerManager) Uninstall(name string) error {
 
 	cm.Store.DeleteSLA(name)
 
-	delete(cm.InstalledComponents,name)
+	delete(cm.InstalledComponents, name)
 
 	return err
 }
