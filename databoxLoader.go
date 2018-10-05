@@ -372,8 +372,7 @@ func (d *Databox) updateContainerManager(badRestartDetected bool) {
 
 	//waiting to be rebooted
 	libDatabox.Info("Restarting the Container Manager")
-	time.Sleep(time.Second * 100)
-	panic("This should never happen but if it dose lets be noisy")
+	time.Sleep(time.Second * 1000)
 }
 
 func (d *Databox) startArbiter() {
