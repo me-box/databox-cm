@@ -343,7 +343,7 @@ func (d *Databox) updateContainerManager(badRestartDetected bool) {
 				Name: "ZMQ_PUBLIC_KEY",
 				UID:  "0",
 				GID:  "0",
-				Mode: 929,
+				Mode: 0444,
 			},
 		})
 	swarmService[0].Spec.TaskTemplate.ContainerSpec.Secrets = append(
@@ -355,7 +355,7 @@ func (d *Databox) updateContainerManager(badRestartDetected bool) {
 				Name: "DATABOX_ROOT_CA",
 				UID:  "0",
 				GID:  "0",
-				Mode: 929,
+				Mode: 0444,
 			},
 		})
 
@@ -392,7 +392,7 @@ func (d *Databox) startArbiter() {
 							Name: "CM_KEY",
 							UID:  "0",
 							GID:  "0",
-							Mode: 929,
+							Mode: 0444,
 						},
 					},
 					&swarm.SecretReference{
@@ -402,7 +402,7 @@ func (d *Databox) startArbiter() {
 							Name: "ZMQ_SECRET_KEY",
 							UID:  "0",
 							GID:  "0",
-							Mode: 929,
+							Mode: 0444,
 						},
 					},
 				},
