@@ -33,9 +33,9 @@ func ServeSecure(cm *ContainerManager, password string) {
 		//Auth
 		if auth(w, r, password) {
 			if websocket.IsWebSocketUpgrade(r) {
-				webSocketProxy(w, r, roots)
+				webSocketProxy(w, r, roots, cm)
 			} else {
-				proxy(w, r, databoxHttpsClient)
+				proxy(w, r, databoxHttpsClient, cm)
 			}
 		}
 
@@ -113,7 +113,7 @@ func auth(w http.ResponseWriter, r *http.Request, password string) bool {
 	return false
 }
 
-func webSocketProxy(w http.ResponseWriter, r *http.Request, roots *x509.CertPool) {
+func webSocketProxy(w http.ResponseWriter, r *http.Request, roots *x509.CertPool, cm *ContainerManager) {
 
 	libDatabox.Debug("[proxyWebSocket] started")
 
@@ -122,6 +122,13 @@ func webSocketProxy(w http.ResponseWriter, r *http.Request, roots *x509.CertPool
 	backendURL := "wss://" + parts[1] + ":8080/" + strings.Join(parts[2:], "/")
 
 	//libDatabox.Debug("[proxyWebSocket] proxing to " + backendURL)
+
+	if !cm.IsInstalled(parts[1]) {
+		//we have no host this is probably a malformed path (error in app or driver html)
+		libDatabox.Debug("[HTTP proxy] return 404 for websocket")
+		http.Error(w, "Page not found", http.StatusNotFound)
+		return
+	}
 
 	dialer := &websocket.Dialer{
 		TLSClientConfig: &tls.Config{
@@ -210,15 +217,19 @@ func webSocketProxy(w http.ResponseWriter, r *http.Request, roots *x509.CertPool
 	return
 }
 
-func proxy(w http.ResponseWriter, r *http.Request, databoxHttpsClient *http.Client) {
+func proxy(w http.ResponseWriter, r *http.Request, databoxHttpsClient *http.Client, cm *ContainerManager) {
 	parts := strings.Split(r.URL.Path, "/")
 	var RequestURI string
 	if len(parts) < 3 {
 		RequestURI = "https://core-ui:8080/ui/"
-		//libDatabox.Debug("SecureServer1 proxing from: " + r.URL.RequestURI() + " to: " + RequestURI)
 	} else {
 		RequestURI = "https://" + parts[1] + ":8080/" + strings.Join(parts[2:], "/")
-		//libDatabox.Debug("SecureServer2 proxing from: " + r.URL.RequestURI() + " to: " + RequestURI)
+		if !cm.IsInstalled(parts[1]) {
+			//we have no host this is probably a malformed path (error in app or driver html)
+			libDatabox.Debug("[HTTP proxy] return 404 for  " + RequestURI)
+			http.Error(w, "Page not found", http.StatusNotFound)
+			return
+		}
 	}
 	var wg sync.WaitGroup
 	copy := func() {
@@ -228,13 +239,14 @@ func proxy(w http.ResponseWriter, r *http.Request, databoxHttpsClient *http.Clie
 			req.Header.Set(name, value[0])
 		}
 		resp, err := databoxHttpsClient.Do(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		if err != nil {
+			libDatabox.Err("[HTTP proxy] got error " + err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		defer resp.Body.Close()
-		defer r.Body.Close()
 
 		for k, v := range resp.Header {
 			w.Header().Set(k, v[0])

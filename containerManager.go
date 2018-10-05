@@ -5,7 +5,6 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -45,6 +44,7 @@ type ContainerManager struct {
 	AppStoreName       string
 	CoreIUName         string
 	CoreStoreName      string
+	InstalledComponents map[string]string
 }
 
 // New returns a configured ContainerManager
@@ -70,6 +70,7 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 		AppStoreName:       "app-store",
 		CoreIUName:         "core-ui",
 		CoreStoreName:      "core-store",
+		InstalledComponents: make(map[string]string),
 	}
 
 	if opt.Arch != "" {
@@ -214,15 +215,19 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 
 	cm.pullImage(service.TaskTemplate.ContainerSpec.Image)
 
+
+	//TODO Check image is available and make some nose if its missing !!!
+	if !cm.imageExists(service.TaskTemplate.ContainerSpec.Image) {
+		return errors.New("Can't install " + localContainerName + " cant find the image " + service.TaskTemplate.ContainerSpec.Image)
+	}
+
 	cm.addPermissionsFromSLA(sla)
 
-	serviceCreateResponse, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
+	_, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
 	if err != nil {
 		libDatabox.Err("[Error launching] " + localContainerName + " " + err.Error())
 		return err
 	}
-
-	fmt.Println("serviceCreateResponse.Warnings::", serviceCreateResponse.Warnings)
 
 	if save {
 		//save the sla for persistence over restarts
@@ -230,9 +235,33 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 		libDatabox.ChkErr(err)
 	}
 
+	//keep track of installed components
+	cm.InstalledComponents[localContainerName] = localContainerName
+
 	libDatabox.Info("Successfully installed " + sla.Name)
 
 	return nil
+}
+
+//IsInstalled Checks to see a component has been installled
+func (cm *ContainerManager) IsInstalled (name string) bool {
+	_, ok := cm.InstalledComponents[name]
+	return ok
+}
+
+
+func (cm *ContainerManager) imageExists(image string) bool {
+	images, _ := cm.cli.ImageList(context.Background(), types.ImageListOptions{})
+	for _, i := range images {
+		for _, tag := range i.RepoTags {
+			if image == tag {
+				//we have the image
+				return true
+			}
+		}
+	}
+	//sorry
+	return false
 }
 
 func (cm *ContainerManager) pullImage(image string) {
@@ -240,15 +269,9 @@ func (cm *ContainerManager) pullImage(image string) {
 	needToPull := true
 
 	//do we have the image on disk?
-	images, _ := cm.cli.ImageList(context.Background(), types.ImageListOptions{})
-	for _, i := range images {
-		for _, tag := range i.RepoTags {
-			if image == tag {
-				//we have the image no need to pull it !!
-				needToPull = false
-				break
-			}
-		}
+	if cm.imageExists(image) {
+		//we have the image no need to pull it !!
+		needToPull = false
 	}
 
 	//is it from the default registry (databoxsystems or whatever we overroad with) and tagged with latest?
@@ -354,6 +377,8 @@ func (cm ContainerManager) Uninstall(name string) error {
 	cm.CoreNetworkClient.PostUninstall(name, networkConfig)
 
 	cm.Store.DeleteSLA(name)
+
+	delete(cm.InstalledComponents,name)
 
 	return err
 }
@@ -666,7 +691,7 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 				Env: []string{
 					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
 					"DATABOX_LOCAL_NAME=" + localContainerName,
-					"DATABOX_VERSION="+cm.Options.Version,
+					"DATABOX_VERSION=" + cm.Options.Version,
 				},
 				Secrets: cm.genorateSecrets(localContainerName, sla.DataboxType),
 				DNSConfig: &swarm.DNSConfig{
@@ -716,7 +741,7 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
 					"DATABOX_LOCAL_NAME=" + localContainerName,
 					"DATABOX_EXPORT_SERVICE_ENDPOINT=https://export-service:8080",
-					"DATABOX_VERSION="+cm.Options.Version,
+					"DATABOX_VERSION=" + cm.Options.Version,
 				},
 				Secrets: cm.genorateSecrets(localContainerName, sla.DataboxType),
 				DNSConfig: &swarm.DNSConfig{
