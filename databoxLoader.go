@@ -1,14 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
 	libDatabox "github.com/me-box/lib-go-databox"
+
+	"archive/tar"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -167,10 +171,12 @@ func (d *Databox) getDNSIP() (string, error) {
 
 func (d *Databox) startCoreNetwork() {
 
+	ctx := context.Background()
+
 	filters := filters.NewArgs()
 	filters.Add("name", "databox-network")
 
-	contList, _ := d.cli.ContainerList(context.Background(), types.ContainerListOptions{
+	contList, _ := d.cli.ContainerList(ctx, types.ContainerListOptions{
 		Filters: filters,
 	})
 
@@ -191,7 +197,7 @@ func (d *Databox) startCoreNetwork() {
 		Labels:     map[string]string{"databox.type": "databox-network"},
 	}
 
-	_, err := d.cli.NetworkCreate(context.Background(), "databox-system-net", options)
+	_, err := d.cli.NetworkCreate(ctx, "databox-system-net", options)
 	libDatabox.ChkErr(err)
 
 	config := &container.Config{
@@ -200,14 +206,10 @@ func (d *Databox) startCoreNetwork() {
 		Cmd:    []string{"-f", "/tmp/relay"},
 	}
 
-	tokenPath := d.Options.HostPath + "/certs/arbiterToken-databox-network"
-	pemPath := d.Options.HostPath + "/certs/databox-network.pem"
 	BCASTFIFOPath := "/tmp/databox_relay"
 
 	hostConfig := &container.HostConfig{
 		Binds: []string{
-			tokenPath + ":/run/secrets/DATABOX_NETWORK_KEY:rw",
-			pemPath + ":/run/secrets/DATABOX_NETWORK.pem:rw",
 			BCASTFIFOPath + ":/tmp/relay",
 		},
 		CapAdd: []string{"NET_ADMIN"},
@@ -225,8 +227,20 @@ func (d *Databox) startCoreNetwork() {
 
 	d.pullImageIfRequired(config.Image)
 
-	containerCreateCreatedBody, ccErr := d.cli.ContainerCreate(context.Background(), config, hostConfig, networkingConfig, containerName)
+	containerCreateCreatedBody, ccErr := d.cli.ContainerCreate(ctx, config, hostConfig, networkingConfig, containerName)
 	libDatabox.ChkErrFatal(ccErr)
+
+	f, err := os.Open("/certs/arbiterToken-databox-network")
+	libDatabox.ChkErr(err)
+	err = d.CopyFileToContainer("/run/secrets/DATABOX_NETWORK_KEY", f, containerCreateCreatedBody.ID)
+	f.Close()
+	libDatabox.ChkErr(err)
+
+	f, _ = os.Open("/certs/databox-network.pem")
+	libDatabox.ChkErr(err)
+	err = d.CopyFileToContainer("/run/secrets/DATABOX_NETWORK.pem", f, containerCreateCreatedBody.ID)
+	f.Close()
+	libDatabox.ChkErr(err)
 
 	err = d.cli.ContainerStart(context.Background(), containerCreateCreatedBody.ID, types.ContainerStartOptions{})
 	libDatabox.ChkErrFatal(err)
@@ -467,4 +481,35 @@ func (d *Databox) removeContainer(name string) {
 		rerr := d.cli.ContainerRemove(context.Background(), containers[0].ID, types.ContainerRemoveOptions{Force: true})
 		libDatabox.ChkErrFatal(rerr)
 	}
+}
+
+// CopyFileToContainer copies a single file of any format to the target container
+func (d *Databox) CopyFileToContainer(targetFullPath string, fileReader io.Reader, containerID string) error {
+
+	ctx := context.Background()
+
+	fileBody, _ := ioutil.ReadAll(fileReader)
+
+	var tarBuf bytes.Buffer
+	tw := tar.NewWriter(&tarBuf)
+	hdr := &tar.Header{
+		Name: targetFullPath,
+		Mode: 0660,
+		Size: int64(len(fileBody)),
+	}
+
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	if _, err := tw.Write(fileBody); err != err {
+		return err
+	}
+
+	var r io.Reader
+	r = &tarBuf
+	err := d.cli.CopyToContainer(ctx, containerID, "/", r, types.CopyToContainerOptions{})
+	if err != nil {
+		return err
+	}
+	return nil
 }
