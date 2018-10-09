@@ -1,18 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
 	"io/ioutil"
 	"os"
 	"strings"
 	"time"
 
 	libDatabox "github.com/me-box/lib-go-databox"
-
-	"archive/tar"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -60,19 +56,19 @@ func (d *Databox) Start() (string, string, string) {
 
 	//Create global secrets that are used in more than one container
 	libDatabox.Debug("Creating secrets")
-	d.DATABOX_ROOT_CA_ID = d.createSecretFromFileIfNotExists("DATABOX_ROOT_CA", "./certs/containerManagerPub.crt")
-	d.CM_KEY_ID = d.createSecretFromFileIfNotExists("CM_KEY", "./certs/arbiterToken-container-manager")
+	d.DATABOX_ROOT_CA_ID = createSecretFromFileIfNotExists("DATABOX_ROOT_CA", "./certs/containerManagerPub.crt")
+	d.CM_KEY_ID = createSecretFromFileIfNotExists("CM_KEY", "./certs/arbiterToken-container-manager")
 
-	d.DATABOX_ARBITER_ID = d.createSecretFromFileIfNotExists("DATABOX_ARBITER.pem", "./certs/arbiter.pem")
+	d.DATABOX_ARBITER_ID = createSecretFromFileIfNotExists("DATABOX_ARBITER.pem", "./certs/arbiter.pem")
 
-	d.DATABOX_PEM = d.createSecretFromFileIfNotExists("DATABOX.pem", "./certs/container-manager.pem")
-	d.DATABOX_NETWORK_KEY = d.createSecretFromFileIfNotExists("DATABOX_NETWORK_KEY", "./certs/arbiterToken-databox-network")
+	d.DATABOX_PEM = createSecretFromFileIfNotExists("DATABOX.pem", "./certs/container-manager.pem")
+	d.DATABOX_NETWORK_KEY = createSecretFromFileIfNotExists("DATABOX_NETWORK_KEY", "./certs/arbiterToken-databox-network")
 
 	//make ZMQ secrests
 	public, private, zmqErr := zmq.NewCurveKeypair()
 	libDatabox.ChkErrFatal(zmqErr)
-	d.ZMQ_PUBLIC_KEY_ID = d.createSecretIfNotExists("ZMQ_PUBLIC_KEY", public)
-	d.ZMQ_SECRET_KEY_ID = d.createSecretIfNotExists("ZMQ_SECRET_KEY", private)
+	d.ZMQ_PUBLIC_KEY_ID = createSecretIfNotExists("ZMQ_PUBLIC_KEY", public)
+	d.ZMQ_SECRET_KEY_ID = createSecretIfNotExists("ZMQ_SECRET_KEY", private)
 
 	//SET CM DNS, create secrets and join to databox-system-net will restart the ContainerManager if needed.
 	d.updateContainerManager(badRestartDetected)
@@ -107,8 +103,8 @@ func (d *Databox) checkForAndFixBadRestarts() bool {
 			libDatabox.ChkErr(err)
 		}
 
-		d.removeContainer("databox-network")
-		d.removeContainer("databox-network-relay")
+		removeContainer("databox-network")
+		removeContainer("databox-network-relay")
 
 		allNetworks, _ := d.cli.NetworkList(ctx, types.NetworkListOptions{Filters: f})
 		if len(allNetworks) > 0 {
@@ -223,22 +219,22 @@ func (d *Databox) startCoreNetwork() {
 	}
 	containerName := "databox-network"
 
-	d.removeContainer(containerName)
+	removeContainer(containerName)
 
-	d.pullImageIfRequired(config.Image)
+	pullImageIfRequired(config.Image, d.Options.DefaultRegistry, d.Options.DefaultRegistryHost)
 
 	containerCreateCreatedBody, ccErr := d.cli.ContainerCreate(ctx, config, hostConfig, networkingConfig, containerName)
 	libDatabox.ChkErrFatal(ccErr)
 
 	f, err := os.Open("/certs/arbiterToken-databox-network")
 	libDatabox.ChkErr(err)
-	err = d.CopyFileToContainer("/run/secrets/DATABOX_NETWORK_KEY", f, containerCreateCreatedBody.ID)
+	err = copyFileToContainer("/run/secrets/DATABOX_NETWORK_KEY", f, containerCreateCreatedBody.ID)
 	f.Close()
 	libDatabox.ChkErr(err)
 
 	f, _ = os.Open("/certs/databox-network.pem")
 	libDatabox.ChkErr(err)
-	err = d.CopyFileToContainer("/run/secrets/DATABOX_NETWORK.pem", f, containerCreateCreatedBody.ID)
+	err = copyFileToContainer("/run/secrets/DATABOX_NETWORK.pem", f, containerCreateCreatedBody.ID)
 	f.Close()
 	libDatabox.ChkErr(err)
 
@@ -271,46 +267,15 @@ func (d *Databox) startCoreNetworkRelay() {
 
 	containerName := "databox-broadcast-relay"
 
-	d.removeContainer(containerName)
+	removeContainer(containerName)
 
-	d.pullImageIfRequired(config.Image)
+	pullImageIfRequired(config.Image, d.Options.DefaultRegistry, d.Options.DefaultRegistryHost)
 
 	containerCreateCreatedBody, err := d.cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, containerName)
 	libDatabox.ChkErrFatal(err)
 
 	err = d.cli.ContainerStart(context.Background(), containerCreateCreatedBody.ID, types.ContainerStartOptions{})
 	libDatabox.ChkErrFatal(err)
-}
-
-func (d *Databox) pullImageIfRequired(image string) {
-	needToPull := true
-
-	//do we have the image on disk?
-	images, _ := d.cli.ImageList(context.Background(), types.ImageListOptions{})
-	for _, i := range images {
-		for _, tag := range i.RepoTags {
-			if image == tag {
-				//we have the image no need to pull it !!
-				needToPull = false
-				break
-			}
-		}
-	}
-
-	//is it from the default registry (databoxsystems or whatever we overroad with) and tagged with latest?
-	if strings.Contains(image, d.Options.DefaultRegistry) == true && strings.Contains(image, ":latest") == true {
-		//its in the default registry and has the :latest tag lets pull it to make sure we are up-to-date
-		needToPull = true
-	}
-
-	if needToPull == true {
-		libDatabox.Info("Pulling Image " + image)
-		reader, err := d.cli.ImagePull(context.Background(), d.Options.DefaultRegistryHost+"/"+image, types.ImagePullOptions{})
-		libDatabox.ChkErrFatal(err)
-		io.Copy(ioutil.Discard, reader)
-		libDatabox.Info("Done pulling Image " + image)
-		reader.Close()
-	}
 }
 
 func (d *Databox) updateContainerManager(badRestartDetected bool) {
@@ -431,85 +396,9 @@ func (d *Databox) startArbiter() {
 
 	serviceOptions := types.ServiceCreateOptions{}
 
-	d.pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image)
+	pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image, d.Options.DefaultRegistry, d.Options.DefaultRegistryHost)
 
 	_, err := d.cli.ServiceCreate(context.Background(), service, serviceOptions)
 	libDatabox.ChkErrFatal(err)
 
-}
-
-func (d *Databox) createSecretIfNotExists(name, data string) string {
-
-	filters := filters.NewArgs()
-	filters.Add("name", name)
-	secrestsList, _ := d.cli.SecretList(context.Background(), types.SecretListOptions{Filters: filters})
-	if len(secrestsList) > 0 {
-		//we have made this before just return the ID
-		return secrestsList[0].ID
-	}
-
-	secret := swarm.SecretSpec{
-		Annotations: swarm.Annotations{
-			Name: name,
-		},
-		Data: []byte(data),
-	}
-	libDatabox.Debug("createSecret for " + name)
-	secretCreateResponse, err := d.cli.SecretCreate(context.Background(), secret)
-	libDatabox.ChkErrFatal(err)
-
-	return secretCreateResponse.ID
-}
-
-func (d *Databox) createSecretFromFileIfNotExists(name, dataPath string) string {
-
-	data, _ := ioutil.ReadFile(dataPath)
-
-	return d.createSecretIfNotExists(name, string(data))
-}
-
-func (d *Databox) removeContainer(name string) {
-	filters := filters.NewArgs()
-	filters.Add("name", name)
-	containers, clerr := d.cli.ContainerList(context.Background(), types.ContainerListOptions{
-		Filters: filters,
-		All:     true,
-	})
-	libDatabox.ChkErrFatal(clerr)
-
-	if len(containers) > 0 {
-		rerr := d.cli.ContainerRemove(context.Background(), containers[0].ID, types.ContainerRemoveOptions{Force: true})
-		libDatabox.ChkErrFatal(rerr)
-	}
-}
-
-// CopyFileToContainer copies a single file of any format to the target container
-func (d *Databox) CopyFileToContainer(targetFullPath string, fileReader io.Reader, containerID string) error {
-
-	ctx := context.Background()
-
-	fileBody, _ := ioutil.ReadAll(fileReader)
-
-	var tarBuf bytes.Buffer
-	tw := tar.NewWriter(&tarBuf)
-	hdr := &tar.Header{
-		Name: targetFullPath,
-		Mode: 0660,
-		Size: int64(len(fileBody)),
-	}
-
-	if err := tw.WriteHeader(hdr); err != nil {
-		return err
-	}
-	if _, err := tw.Write(fileBody); err != err {
-		return err
-	}
-
-	var r io.Reader
-	r = &tarBuf
-	err := d.cli.CopyToContainer(ctx, containerID, "/", r, types.CopyToContainerOptions{})
-	if err != nil {
-		return err
-	}
-	return nil
 }

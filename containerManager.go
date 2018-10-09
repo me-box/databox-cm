@@ -5,8 +5,6 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,9 +17,9 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/api/types/mount"
 
 	"crypto/rand"
 )
@@ -191,7 +189,7 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 		return errors.New("Unsupported image type")
 	}
 
-	cm.pullImage(service.TaskTemplate.ContainerSpec.Image)
+	pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image, cm.Options.DefaultRegistry, cm.Options.DefaultRegistryHost)
 
 	//TODO Check image is available and make some nose if its missing !!!
 	if !cm.imageExists(service.TaskTemplate.ContainerSpec.Image) {
@@ -211,7 +209,6 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 			service.TaskTemplate.ContainerSpec.Env,
 			"DATABOX_ZMQ_DEALER_ENDPOINT=tcp://"+requiredStoreName+":5556",
 		)
-
 	}
 
 	libDatabox.Debug("networksToConnect" + strings.Join(requiredNetworks, ","))
@@ -263,36 +260,6 @@ func (cm *ContainerManager) imageExists(image string) bool {
 	}
 	//sorry
 	return false
-}
-
-func (cm *ContainerManager) pullImage(image string) {
-
-	needToPull := true
-
-	//do we have the image on disk?
-	if cm.imageExists(image) {
-		//we have the image no need to pull it !!
-		needToPull = false
-	}
-
-	//is it from the default registry (databoxsystems or whatever we overroad with) and tagged with latest?
-	if strings.Contains(image, cm.Options.DefaultRegistry) == true && strings.Contains(image, ":latest") == true {
-		//its in the default registry and has the :latest tag lets pull it to make sure we are up-to-date
-		needToPull = true
-	}
-
-	if needToPull == true {
-		libDatabox.Info("Pulling Image " + image)
-		reader, err := cm.cli.ImagePull(context.Background(), cm.Options.DefaultRegistryHost+"/"+image, types.ImagePullOptions{})
-		libDatabox.ChkErr(err)
-		if err != nil {
-			return
-		}
-		io.Copy(ioutil.Discard, reader)
-		libDatabox.Info("Done pulling Image " + image)
-		reader.Close()
-	}
-
 }
 
 // Restart will restart the databox component, app or driver by service name
@@ -680,43 +647,10 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 		imageName = sla.Image
 	}
 
-	service := swarm.ServiceSpec{
-		Annotations: swarm.Annotations{
-			Labels: map[string]string{"databox.type": "driver"},
-		},
-		TaskTemplate: swarm.TaskSpec{
-			ContainerSpec: &swarm.ContainerSpec{
-				Hostname: localContainerName,
-				Image:    imageName,
-				Labels:   map[string]string{"databox.type": "driver"},
-
-				Env: []string{
-					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
-					"DATABOX_LOCAL_NAME=" + localContainerName,
-					"DATABOX_VERSION=" + cm.Options.Version,
-				},
-				DNSConfig: &swarm.DNSConfig{
-					Nameservers: []string{netConf.DNS},
-				},
-			},
-			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
-				Target:  netConf.NetworkName,
-				Aliases: []string{localContainerName},
-			}},
-			Placement: &swarm.Placement{
-				Constraints: []string{"node.Role == manager"},
-			},
-		},
-		EndpointSpec: &swarm.EndpointSpec{
-			Mode: swarm.ResolutionModeDNSRR,
-		},
-	}
-
+	service := constructDefaultServiceSpec(localContainerName, imageName, libDatabox.DataboxTypeDriver, cm.Options.Version, netConf)
 	service.Name = localContainerName
 
-	serviceOptions := types.ServiceCreateOptions{}
-
-	return service, serviceOptions, []string{"arbiter"}
+	return service, types.ServiceCreateOptions{}, []string{"arbiter"}
 }
 
 func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName string, netConf NetworkConfig) (swarm.ServiceSpec, types.ServiceCreateOptions, []string) {
@@ -729,41 +663,9 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 		imageName = sla.Image
 	}
 
-	service := swarm.ServiceSpec{
-		Annotations: swarm.Annotations{
-			Labels: map[string]string{"databox.type": "app"},
-		},
-		TaskTemplate: swarm.TaskSpec{
-			ContainerSpec: &swarm.ContainerSpec{
-				Hostname: localContainerName,
-				Image:    imageName,
-				Labels:   map[string]string{"databox.type": "app"},
-				Env: []string{
-					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
-					"DATABOX_LOCAL_NAME=" + localContainerName,
-					"DATABOX_EXPORT_SERVICE_ENDPOINT=https://export-service:8080",
-					"DATABOX_VERSION=" + cm.Options.Version,
-				},
-				DNSConfig: &swarm.DNSConfig{
-					Nameservers: []string{netConf.DNS},
-				},
-			},
-			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
-				Target:  netConf.NetworkName,
-				Aliases: []string{localContainerName},
-			}},
-			Placement: &swarm.Placement{
-				Constraints: []string{"node.Role == manager"},
-			},
-		},
-		EndpointSpec: &swarm.EndpointSpec{
-			Mode: swarm.ResolutionModeDNSRR,
-		},
-	}
+	service := constructDefaultServiceSpec(localContainerName, imageName, libDatabox.DataboxTypeApp, cm.Options.Version, netConf)
 
 	service.Name = localContainerName
-
-	serviceOptions := types.ServiceCreateOptions{}
 
 	//add datasource info to the env vars and create a list networks this app needs to access
 	requiredNetworks := map[string]string{"arbiter": "arbiter", "export-service": "export-service"}
@@ -787,7 +689,7 @@ func (cm ContainerManager) getAppConfig(sla libDatabox.SLA, localContainerName s
 		}
 	}
 
-	return service, serviceOptions, networksToConnect
+	return service, types.ServiceCreateOptions{}, networksToConnect
 }
 
 func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName string, netConf NetworkConfig) string {
@@ -801,52 +703,27 @@ func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName s
 		return requiredStoreName
 	}
 
-	service := swarm.ServiceSpec{
-		Annotations: swarm.Annotations{
-			Labels: map[string]string{"databox.type": "store"},
-		},
-		TaskTemplate: swarm.TaskSpec{
-			ContainerSpec: &swarm.ContainerSpec{
-				Hostname: requiredStoreName,
-				Image:    cm.Options.DefaultStoreImage + cm.ARCH + ":" + cm.Options.Version,
-				Labels:   map[string]string{"databox.type": "store"},
-				Env: []string{
-					"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444",
-					"DATABOX_LOCAL_NAME=" + requiredStoreName,
-				},
-				Secrets: cm.genorateSecrets(requiredStoreName, libDatabox.DataboxType("store")),
-				DNSConfig: &swarm.DNSConfig{
-					Nameservers: []string{netConf.DNS},
-				},
-				Mounts: []mount.Mount{
-					mount.Mount{
-						Source: requiredStoreName,
-						Target: "/database",
-						Type:   "volume",
-					},
-				},
-			},
-			Placement: &swarm.Placement{
-				Constraints: []string{"node.role == manager"},
-			},
-			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
-				Target:  netConf.NetworkName,
-				Aliases: []string{requiredStoreName},
-			}},
-		},
-		EndpointSpec: &swarm.EndpointSpec{
-			Mode: swarm.ResolutionModeDNSRR,
+	image := cm.Options.DefaultStoreImage + cm.ARCH + ":" + cm.Options.Version
+
+	service := constructDefaultServiceSpec(requiredStoreName, image, libDatabox.DataboxTypeStore, cm.Options.Version, netConf)
+
+	service.Name = requiredStoreName
+	//Add secrests to store
+	service.TaskTemplate.ContainerSpec.Secrets = cm.genorateSecrets(requiredStoreName, libDatabox.DataboxTypeStore)
+	storeName := requiredStoreName
+
+	//Add mounts to store
+	service.TaskTemplate.ContainerSpec.Mounts = []mount.Mount{
+		mount.Mount{
+			Source: requiredStoreName,
+			Target: "/database",
+			Type:   "volume",
 		},
 	}
 
-	service.Name = requiredStoreName
-	serviceOptions := types.ServiceCreateOptions{}
+	pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image, cm.Options.DefaultRegistry, cm.Options.DefaultRegistryHost)
 
-	storeName := requiredStoreName
-
-	cm.pullImage(service.TaskTemplate.ContainerSpec.Image)
-
-	_, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
+	_, err := cm.cli.ServiceCreate(context.Background(), service, types.ServiceCreateOptions{})
 	if err != nil {
 		libDatabox.Err("Launching store " + requiredStoreName + " " + err.Error())
 	}
@@ -1131,7 +1008,7 @@ func (cm ContainerManager) startExportService() {
 
 	serviceOptions := types.ServiceCreateOptions{}
 
-	cm.pullImage(service.TaskTemplate.ContainerSpec.Image)
+	pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image, cm.Options.DefaultRegistry, cm.Options.DefaultRegistryHost)
 
 	_, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
 	libDatabox.ChkErrFatal(err)
