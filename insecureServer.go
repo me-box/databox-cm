@@ -28,7 +28,7 @@ func ServeInsecure() {
 
 func CertProxy(w http.ResponseWriter, r *http.Request, databoxHttpsClient *http.Client) {
 
-	RequestURI := "https://core-ui:8080/ui/" + r.URL.Path
+	RequestURI := "https://core-ui:8080/ui" + r.URL.Path
 
 	libDatabox.Debug("InsecureServer proxing from: " + r.URL.RequestURI() + " to: " + RequestURI)
 	var wg sync.WaitGroup
