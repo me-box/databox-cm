@@ -13,10 +13,10 @@ RUN go get -d github.com/pkg/errors
 RUN go get -d github.com/skip2/go-qrcode
 RUN go get -d github.com/docker/go-connections
 RUN rm -rf /go/src/github.com/docker/docker/vendor/github.com/docker/go-connections
-RUN go get -d github.com/me-box/lib-go-databox
 RUN go get -d golang.org/x/net/proxy
 COPY . /go/src/github.com/me-box/core-container-manager/
 RUN addgroup -S databox && adduser -S -g databox databox
+RUN go get -d github.com/me-box/lib-go-databox
 RUN GGO_ENABLED=0 GOOS=linux go build -a -tags netgo -installsuffix netgo -ldflags '-s -w' -o app /go/src/github.com/me-box/core-container-manager/*.go
 
 FROM arm64v8/alpine:3.8

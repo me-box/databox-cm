@@ -11,8 +11,8 @@ RUN go get -d github.com/docker/docker/api/types
 RUN go get -d github.com/pkg/errors
 RUN go get -d github.com/skip2/go-qrcode
 RUN go get -d github.com/docker/go-connections
-RUN go get -d github.com/me-box/lib-go-databox
 RUN rm -rf /go/src/github.com/docker/docker/vendor/github.com/docker/go-connections
+RUN go get -d github.com/me-box/lib-go-databox
 RUN go get -d golang.org/x/net/proxy
 
 COPY . .
