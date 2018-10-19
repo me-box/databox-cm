@@ -202,7 +202,9 @@ func convertManifestToSLA(ir installRequest) libDatabox.SLA {
 		DisplayName:          ir.Manifest.DisplayName,
 		StoreURL:             ir.Manifest.StoreURL,
 		//Registry:             ir.Manifest., TODO is this needed??
-		Datasources: ir.Manifest.DataSources,
+		Datasources:    ir.Manifest.DataSources,
+		DockerImage:    ir.Manifest.DockerImage,
+		DockerImageTag: ir.Manifest.DockerImageTag,
 	}
 	return sla
 }
@@ -350,7 +352,7 @@ func populateDataSources(cm *ContainerManager) {
 			sc := libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", storeURL, false)
 			storeCat, err := sc.GetStoreDataSourceCatalogue(item.Href)
 			if err != nil {
-				libDatabox.Warn("[populateDataSources] GetStoreDataSourceCatalogue " + item.Href + " " + err.Error())
+				libDatabox.Warn("[populateDataSources] GetStoreDataSourceCatalogue item.Href=" + item.Href + " storeURL=" + storeURL + " " + err.Error())
 			}
 			for _, ds := range storeCat.Items {
 				datasources = append(datasources, ds)
