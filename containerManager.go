@@ -889,6 +889,19 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
 				}
+
+				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + " on " + datasourceEndpoint.Hostname())
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "GET", []string{})
+				if err != nil {
+					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
+				}
+
+				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + "/* on " + datasourceEndpoint.Hostname())
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", []string{})
+				if err != nil {
+					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
+				}
+
 			} else if libDatabox.IsFunc(ds) { //Deal with databox functions
 				libDatabox.Debug("Adding write permissions for functions request /notification/request/" + ds.Name + "/* on " + datasourceEndpoint.Hostname())
 				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/request/"+ds.Name+"/*", "POST", []string{})
