@@ -36,7 +36,6 @@ type ContainerManager struct {
 	ZMQ_PRIVATE_KEY_ID  string
 	ARCH                string
 	cmStoreURL          string
-	Logger              *libDatabox.Logger
 	Store               *CMStore
 	Options             *libDatabox.ContainerManagerOptions
 	AppStoreName        string
