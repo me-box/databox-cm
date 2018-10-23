@@ -439,10 +439,9 @@ func (cm ContainerManager) launchUI() {
 	name := cm.CoreIUName
 
 	sla := libDatabox.SLA{
-		Name:           name,
-		DockerImage:    cm.Options.CoreUIImage,
-		DockerImageTag: cm.Options.Version,
-		DataboxType:    libDatabox.DataboxTypeApp,
+		Name:        name,
+		DockerImage: cm.Options.CoreUIImage,
+		DataboxType: libDatabox.DataboxTypeApp,
 		Datasources: []libDatabox.DataSource{
 			libDatabox.DataSource{
 				Type:          "databox:func:ServiceStatus",
@@ -568,10 +567,9 @@ func (cm ContainerManager) launchAppStore() {
 	name := cm.AppStoreName
 
 	sla := libDatabox.SLA{
-		Name:           name,
-		DockerImage:    cm.Options.AppServerImage,
-		DockerImageTag: cm.Options.Version,
-		DataboxType:    libDatabox.DataboxTypeDriver,
+		Name:        name,
+		DockerImage: cm.Options.AppServerImage,
+		DataboxType: libDatabox.DataboxTypeDriver,
 		ResourceRequirements: libDatabox.ResourceRequirements{
 			Store: cm.CoreStoreName,
 		},
@@ -616,26 +614,40 @@ func (cm ContainerManager) launchCMStore() string {
 
 func (cm ContainerManager) calculateImageNameFromSLA(sla libDatabox.SLA) string {
 
+	if strings.Contains(sla.DockerImage, "/") && strings.Contains(sla.DockerImage, ":") {
+		//looks like a full tagged image
+		return sla.DockerImage
+	}
+
 	imageName := ""
+	registry := ""
+	version := ""
 
 	//work out the registry and image name
 	if sla.DockerImage != "" {
 		imageName = sla.DockerImage
 	} else {
-		imageName = cm.Options.DefaultRegistry + "/" + sla.Name
+		imageName = sla.Name
 	}
 
 	//add the arch
 	imageName += cm.ARCH
 
-	//work out the image tag
-	if sla.DockerImageTag != "" {
-		imageName += ":" + sla.DockerImageTag
+	//work out registry
+	if sla.DockerRegistry != "" {
+		registry = sla.DockerImageTag
 	} else {
-		imageName += ":" + cm.Options.Version
+		registry = cm.Options.DefaultRegistry
 	}
 
-	return imageName
+	//work out the image tag
+	if sla.DockerImageTag != "" {
+		version = sla.DockerImageTag
+	} else {
+		version = cm.Options.Version
+	}
+
+	return registry + "/" + imageName + ":" + version
 }
 
 func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerName string, netConf NetworkConfig) (swarm.ServiceSpec, types.ServiceCreateOptions, []string) {
@@ -692,7 +704,7 @@ func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName s
 		return requiredStoreName
 	}
 
-	image := cm.Options.DefaultStoreImage + cm.ARCH + ":" + cm.Options.Version
+	image := cm.Options.DefaultStoreImage
 
 	service := constructDefaultServiceSpec(requiredStoreName, image, libDatabox.DataboxTypeStore, cm.Options.Version, netConf)
 
@@ -987,7 +999,7 @@ func (cm ContainerManager) startExportService() {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
-				Image:   cm.Options.ExportServiceImage + cm.ARCH + ":" + cm.Options.Version,
+				Image:   cm.Options.ExportServiceImage,
 				Env:     []string{"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444"},
 				Secrets: cm.genorateSecrets("export-service", libDatabox.DataboxTypeStore),
 			},

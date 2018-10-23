@@ -197,7 +197,7 @@ func (d *Databox) startCoreNetwork() {
 	libDatabox.ChkErr(err)
 
 	config := &container.Config{
-		Image:  d.Options.CoreNetworkImage + "-" + d.Options.Arch + ":" + d.Options.Version,
+		Image:  d.Options.CoreNetworkImage,
 		Labels: map[string]string{"databox.type": "databox-network"},
 		Cmd:    []string{"-f", "/tmp/relay"},
 	}
@@ -251,7 +251,7 @@ func (d *Databox) startCoreNetwork() {
 func (d *Databox) startCoreNetworkRelay() {
 
 	config := &container.Config{
-		Image:  d.Options.CoreNetworkRelayImage + "-" + d.Options.Arch + ":" + d.Options.Version,
+		Image:  d.Options.CoreNetworkRelayImage,
 		Labels: map[string]string{"databox.type": "databox-network-relay"},
 		Cmd:    []string{"-f", "/tmp/relay", "-h", d.Options.InternalIPs[0]}, //TODO can we pass all the IPs here?
 	}
@@ -362,7 +362,7 @@ func (d *Databox) startArbiter() {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
-				Image: d.Options.ArbiterImage + "-" + d.Options.Arch + ":" + d.Options.Version,
+				Image: d.Options.ArbiterImage,
 				Secrets: []*swarm.SecretReference{
 					&swarm.SecretReference{
 						SecretID:   d.CM_KEY_ID,
