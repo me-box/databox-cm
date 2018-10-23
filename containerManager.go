@@ -82,6 +82,9 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 
 func (cm ContainerManager) Start() {
 
+	//set debug output
+	libDatabox.OutputDebug(cm.Options.EnableDebugLogging)
+
 	//register with core-network
 	cm.CoreNetworkClient.RegisterPrivileged()
 
@@ -104,12 +107,6 @@ func (cm ContainerManager) Start() {
 
 	//setup the cm to log to the store
 	cm.CmgrStoreClient = libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", cm.cmStoreURL, false)
-	l, err := libDatabox.New(cm.CmgrStoreClient, cm.Options.EnableDebugLogging)
-	if err != nil {
-		libDatabox.Err("Filed to set up logging to store. " + err.Error())
-	}
-	cm.Logger = l
-	cm.Logger.Debug("CM logs going to the cm store")
 
 	//setup the cmStore
 	cm.Store = NewCMStore(cm.CmgrStoreClient)
