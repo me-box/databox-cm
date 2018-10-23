@@ -52,6 +52,7 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 	request := libDatabox.NewDataboxHTTPsAPIWithPaths("/certs/containerManager.crt")
 	ac, err := libDatabox.NewArbiterClient("/certs/arbiterToken-container-manager", "/run/secrets/ZMQ_PUBLIC_KEY", "tcp://arbiter:4444")
 	libDatabox.ChkErr(err)
+
 	cnc := NewCoreNetworkClient("/certs/arbiterToken-databox-network", request)
 
 	cm := ContainerManager{
@@ -152,6 +153,31 @@ func (cm ContainerManager) Start() {
 	//Reload and saved drivers and app from the cm store
 	libDatabox.Info("Restarting saved apps and drivers")
 	cm.reloadApps()
+
+	//start crash detectore
+	go cm.crashDetectore()
+
+}
+
+//Monitor docker events for crashed apps and drivers
+//If an app or driver crashes restart it to fix the
+//core-network registration
+func (cm ContainerManager) crashDetectore() {
+
+	eventChan, _ := cm.cli.Events(context.Background(), types.EventsOptions{})
+	for {
+		select {
+		case msg := <-eventChan:
+			if msg.Type == "container" && msg.Action == "die" {
+				if databoxType, ok := msg.Actor.Attributes["databox.type"]; ok {
+					libDatabox.Warn("Crash detected for " + databoxType + " " + msg.Actor.Attributes["com.docker.swarm.service.name"])
+					libDatabox.Warn("Restarting " + msg.Actor.Attributes["com.docker.swarm.service.name"])
+					cm.Restart(msg.Actor.Attributes["com.docker.swarm.service.name"])
+				}
+			}
+		}
+	}
+
 }
 
 // LaunchFromSLA will start a databox app or driver with the reliant stores and grant permissions required as described in the SLA
@@ -182,7 +208,7 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 	case libDatabox.DataboxTypeDriver:
 		service, serviceOptions, requiredNetworks = cm.getDriverConfig(sla, localContainerName, netConf)
 	default:
-		return errors.New("Unsupported image type")
+		return errors.New("[LaunchFromSLA] Unsupported image type")
 	}
 
 	pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image, cm.Options.DefaultRegistry, cm.Options.DefaultRegistryHost)
@@ -631,7 +657,7 @@ func (cm ContainerManager) calculateImageNameFromSLA(sla libDatabox.SLA) string 
 
 	//work out registry
 	if sla.DockerRegistry != "" {
-		registry = sla.DockerImageTag
+		registry = sla.DockerRegistry
 	} else {
 		registry = cm.Options.DefaultRegistry
 	}
@@ -851,9 +877,14 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 
 		libDatabox.Debug("Adding Export permissions for " + localContainerName + " on " + urlsString)
 
-		err = cm.addPermission(localContainerName, "export-service", "/export/", "POST", []string{urlsString})
+		err = cm.addPermission(localContainerName, "export-service", "/export", "POST", []string{urlsString})
 		if err != nil {
 			libDatabox.Err("Adding write permissions for export-service " + err.Error())
+		}
+
+		err = cm.addPermission(localContainerName, "export-service", "/lp/export", "POST", []string{urlsString})
+		if err != nil {
+			libDatabox.Err("Adding write permissions for lp export-service " + err.Error())
 		}
 	}
 
