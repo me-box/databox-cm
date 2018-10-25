@@ -164,16 +164,45 @@ func (cm ContainerManager) Start() {
 //core-network registration
 func (cm ContainerManager) crashDetectore() {
 
+	restartDetected := map[string]string{}
+	uninstallDetected := map[string]string{}
+
 	eventChan, _ := cm.cli.Events(context.Background(), types.EventsOptions{})
 	for {
 		select {
 		case msg := <-eventChan:
+
+			if msg.Type == "service" && msg.Action == "remove" {
+				libDatabox.Debug("Uninstall detected" + msg.Actor.ID)
+				uninstallDetected[msg.Actor.ID] = msg.Actor.ID
+			}
+
+			if msg.Type == "container" && msg.Action == "kill" && msg.Actor.Attributes["signal"] == "9" {
+				libDatabox.Debug("Restart detected")
+				restartDetected[msg.Actor.Attributes["name"]] = msg.Actor.Attributes["name"]
+			}
+
 			if msg.Type == "container" && msg.Action == "die" {
-				if databoxType, ok := msg.Actor.Attributes["databox.type"]; ok {
-					libDatabox.Warn("Crash detected for " + databoxType + " " + msg.Actor.Attributes["com.docker.swarm.service.name"])
-					libDatabox.Warn("Restarting " + msg.Actor.Attributes["com.docker.swarm.service.name"])
-					cm.Restart(msg.Actor.Attributes["com.docker.swarm.service.name"])
+
+				name := msg.Actor.Attributes["com.docker.swarm.service.name"]
+				ContName := msg.Actor.Attributes["name"]
+				serviceID := msg.Actor.Attributes["com.docker.swarm.service.id"]
+
+				if _, ok := restartDetected[ContName]; ok { //is it being restarted?
+					delete(restartDetected, ContName)
+					libDatabox.Debug("Not restarting " + name + " this time restart detected")
+				} else if _, ok := uninstallDetected[serviceID]; ok { //is it being uninstall?
+					delete(uninstallDetected, serviceID)
+					libDatabox.Debug("Not restarting " + name + " this time uninstall detected")
+				} else if _, ok := msg.Actor.Attributes["databox.type"]; !ok {
+					//Its not a databox app or driver do nothing
+					libDatabox.Debug("Not restarting " + name + " its not a databox app or driver")
+				} else { //looks looks a crash restart it
+					libDatabox.Warn("Crash detected for " + name)
+					libDatabox.Warn("Restarting " + name)
+					cm.Restart(name)
 				}
+
 			}
 		}
 	}
