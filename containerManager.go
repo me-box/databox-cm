@@ -895,29 +895,22 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 
 	//set export permissions from export-whitelist
 	if len(sla.ExportWhitelists) > 0 {
-		urlsString := "destination = [\""
-		for i, whiteList := range sla.ExportWhitelists {
-			urlsString = urlsString + whiteList.Url
-			if i < len(sla.ExportWhitelists) {
-				urlsString = urlsString + ","
+		for _, whiteList := range sla.ExportWhitelists {
+			caveat := `{"destination":"` + whiteList.Url + `"}`
+
+			libDatabox.Debug("Adding Export permissions for " + localContainerName + " on " + whiteList.Url)
+
+			err = cm.addPermission(localContainerName, "export-service", "/export", "POST", caveat)
+			if err != nil {
+				libDatabox.Err("Adding write permissions for export-service " + err.Error())
+			}
+
+			err = cm.addPermission(localContainerName, "export-service", "/lp/export", "POST", caveat)
+			if err != nil {
+				libDatabox.Err("Adding write permissions for lp export-service " + err.Error())
 			}
 		}
-		//remove trailing ,
-		urlsString = strings.TrimRight(urlsString, ",")
-		//close the quote
-		urlsString = urlsString + `"]`
 
-		libDatabox.Debug("Adding Export permissions for " + localContainerName + " on " + urlsString)
-
-		err = cm.addPermission(localContainerName, "export-service", "/export", "POST", []string{urlsString})
-		if err != nil {
-			libDatabox.Err("Adding write permissions for export-service " + err.Error())
-		}
-
-		err = cm.addPermission(localContainerName, "export-service", "/lp/export", "POST", []string{urlsString})
-		if err != nil {
-			libDatabox.Err("Adding write permissions for lp export-service " + err.Error())
-		}
 	}
 
 	//set export permissions from ExternalWhitelist
@@ -950,49 +943,49 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 
 			if libDatabox.IsActuator(ds) { //Deal with Actuators
 				libDatabox.Debug("Adding write permissions for Actuator " + datasourceName + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "POST", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "POST", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
 				}
 
 				libDatabox.Debug("Adding write permissions for Actuator " + datasourceName + " on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "POST", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "POST", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
 				}
 
 				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + " on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
 				}
 
 				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
 				}
 
 			} else if libDatabox.IsFunc(ds) { //Deal with databox functions
 				libDatabox.Debug("Adding write permissions for functions request /notification/request/" + ds.Name + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/request/"+ds.Name+"/*", "POST", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/request/"+ds.Name+"/*", "POST", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for functions " + err.Error())
 				}
 				libDatabox.Debug("Adding read permissions for functions response /notification/response/" + ds.Name + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/response/"+ds.Name+"/*", "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/response/"+ds.Name+"/*", "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for functions " + err.Error())
 				}
 			} else {
 				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + " on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
 				}
 
 				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
 				}
@@ -1007,25 +1000,25 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 		requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store
 
 		libDatabox.Debug("Adding read permissions for container-manager on " + requiredStoreName + "/cat")
-		err = cm.addPermission("container-manager", requiredStoreName, "/cat", "GET", []string{})
+		err = cm.addPermission("container-manager", requiredStoreName, "/cat", "GET", "")
 		if err != nil {
 			libDatabox.Err("Adding read permissions for container-manager on /cat " + err.Error())
 		}
 
 		libDatabox.Debug("Adding write permissions for dependent store " + localContainerName + " on " + requiredStoreName + "/*")
-		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "POST", []string{})
+		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "POST", "")
 		if err != nil {
 			libDatabox.Err("Adding write permissions for dependent store " + err.Error())
 		}
 
 		libDatabox.Debug("Adding delete permissions for dependent store " + localContainerName + " on " + requiredStoreName + "/*")
-		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "DELETE", []string{})
+		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "DELETE", "")
 		if err != nil {
 			libDatabox.Err("Adding delete permissions for dependent store " + err.Error())
 		}
 
 		libDatabox.Debug("Adding read permissions for dependent store " + localContainerName + " on " + requiredStoreName + "/*")
-		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "GET", []string{})
+		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "GET", "")
 		if err != nil {
 			libDatabox.Err("Adding read permissions for dependent store " + err.Error())
 		}
@@ -1034,7 +1027,7 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 }
 
 //addPermission helper function to wraps ArbiterClient.GrantContainerPermissions
-func (cm ContainerManager) addPermission(name string, target string, path string, method string, caveats []string) error {
+func (cm ContainerManager) addPermission(name string, target string, path string, method string, caveat string) error {
 
 	newPermission := libDatabox.ContainerPermissions{
 		Name: name,
@@ -1043,7 +1036,7 @@ func (cm ContainerManager) addPermission(name string, target string, path string
 			Path:   path,
 			Method: method,
 		},
-		Caveats: caveats,
+		Caveat: caveat,
 	}
 
 	return cm.ArbiterClient.GrantContainerPermissions(newPermission)
