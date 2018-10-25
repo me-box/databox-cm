@@ -343,8 +343,11 @@ func (cm ContainerManager) Restart(name string) error {
 	}
 
 	//wait for the restarted container to start
-	newCont, err := cm.WaitForService(name, 10)
-	libDatabox.ChkErr(err)
+	newCont, err := cm.WaitForService(name, 20)
+	if err != nil {
+		libDatabox.Warn("Failed to restart " + name + " " + err.Error())
+		return err
+	}
 
 	//found restarted container !!!
 	//Stash the new container IP
