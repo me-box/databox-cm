@@ -9,13 +9,13 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
-	libDatabox "github.com/me-box/lib-go-databox"
+	"github.com/me-box/lib-go-databox"
 )
 
 func ServeSecure(cm *ContainerManager, password string) {
@@ -41,41 +41,14 @@ func ServeSecure(cm *ContainerManager, password string) {
 	libDatabox.ChkErrFatal(http.ListenAndServeTLS(":443", "./certs/container-manager.pem", "./certs/container-manager.pem", nil))
 }
 
-var allowedStaticPaths = map[string]string{
-	"css":                  "",
-	"js":                   "",
-	"icons":                "",
-	"img":                  "",
-	"":                     "",
-	"cordova.js":           "",
-	"/core-ui/ui":          "",
-	"/core-ui/ui/js":       "",
-	"/core-ui/ui/css":      "",
-	"/core-ui/ui/img":      "",
-	"/core-ui/ui/cert.pem": "",
-	"/ui/cert.pem":         "",
-	"/cert.pem":            "",
-}
+// Allows access to all /core-ui/ui/ paths except /core-ui/ui/api paths
+var allowedStaticPath, _ = regexp.Compile("^/core-ui/ui/(?!api).*$")
 
 //A map to hold session tokens
-
 var sessionTokens sync.Map
 
 func auth(w http.ResponseWriter, r *http.Request, password string) bool {
-
-	parts := strings.Split(r.URL.Path, "/")
-
-	if _, ok := allowedStaticPaths[parts[1]]; ok {
-		//its allowed no auth needed
-		return true
-	}
-
-	if _, ok := allowedStaticPaths[r.URL.Path]; ok {
-		//its allowed no auth needed
-		return true
-	}
-
-	if _, ok := allowedStaticPaths[filepath.Dir(r.URL.Path)]; ok {
+	if allowedStaticPath.MatchString(r.URL.Path) {
 		//its allowed no auth needed
 		return true
 	}
