@@ -204,6 +204,7 @@ func convertManifestToSLA(ir installRequest) libDatabox.SLA {
 		//Registry:             ir.Manifest., TODO is this needed??
 		Datasources:    ir.Manifest.DataSources,
 		DockerImage:    ir.Manifest.DockerImage,
+		DockerRegistry: ir.Manifest.DockerRegistry,
 		DockerImageTag: ir.Manifest.DockerImageTag,
 	}
 	return sla

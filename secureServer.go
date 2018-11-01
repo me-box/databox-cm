@@ -25,9 +25,6 @@ func ServeSecure(cm *ContainerManager, password string) {
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM([]byte(CM_HTTPS_CA_ROOT_CERT))
 
-	//setup the session token map
-	sessionToken = make(map[string]int)
-
 	//Proxy
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		//Auth
@@ -61,7 +58,8 @@ var allowedStaticPaths = map[string]string{
 }
 
 //A map to hold session tokens
-var sessionToken map[string]int
+
+var sessionTokens sync.Map
 
 func auth(w http.ResponseWriter, r *http.Request, password string) bool {
 
@@ -88,7 +86,7 @@ func auth(w http.ResponseWriter, r *http.Request, password string) bool {
 		b := make([]byte, 24)
 		rand.Read(b) //TODO This could error should check
 		token := b64.StdEncoding.EncodeToString(b)
-		sessionToken[token] = 1
+		sessionTokens.Store(token, 1)
 
 		cookie := http.Cookie{
 			Name:   "session",
@@ -102,9 +100,9 @@ func auth(w http.ResponseWriter, r *http.Request, password string) bool {
 	}
 
 	sessionCookie, _ := r.Cookie("session")
-	if sessionCookie != nil && sessionToken[sessionCookie.Value] == 1 {
-		//libDatabox.Debug("Session cookie OK")
-		return true
+	if sessionCookie != nil {
+		_, ok := sessionTokens.Load(sessionCookie.Value)
+		return ok
 	}
 
 	libDatabox.Err("Password validation error!" + r.Header.Get("Authorization"))
@@ -229,6 +227,9 @@ func proxy(w http.ResponseWriter, r *http.Request, databoxHttpsClient *http.Clie
 			libDatabox.Debug("[HTTP proxy] return 404 for  " + RequestURI)
 			http.Error(w, "Page not found", http.StatusNotFound)
 			return
+		}
+		if r.URL.RawQuery != "" {
+			RequestURI += "?" + r.URL.RawQuery
 		}
 	}
 	var wg sync.WaitGroup

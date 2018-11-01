@@ -36,7 +36,6 @@ type ContainerManager struct {
 	ZMQ_PRIVATE_KEY_ID  string
 	ARCH                string
 	cmStoreURL          string
-	Logger              *libDatabox.Logger
 	Store               *CMStore
 	Options             *libDatabox.ContainerManagerOptions
 	AppStoreName        string
@@ -53,6 +52,7 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 	request := libDatabox.NewDataboxHTTPsAPIWithPaths("/certs/containerManager.crt")
 	ac, err := libDatabox.NewArbiterClient("/certs/arbiterToken-container-manager", "/run/secrets/ZMQ_PUBLIC_KEY", "tcp://arbiter:4444")
 	libDatabox.ChkErr(err)
+
 	cnc := NewCoreNetworkClient("/certs/arbiterToken-databox-network", request)
 
 	cm := ContainerManager{
@@ -82,6 +82,9 @@ func NewContainerManager(rootCASecretId string, zmqPublicId string, zmqPrivateId
 
 func (cm ContainerManager) Start() {
 
+	//set debug output
+	libDatabox.OutputDebug(cm.Options.EnableDebugLogging)
+
 	//register with core-network
 	cm.CoreNetworkClient.RegisterPrivileged()
 
@@ -104,12 +107,6 @@ func (cm ContainerManager) Start() {
 
 	//setup the cm to log to the store
 	cm.CmgrStoreClient = libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", cm.cmStoreURL, false)
-	l, err := libDatabox.New(cm.CmgrStoreClient, cm.Options.EnableDebugLogging)
-	if err != nil {
-		libDatabox.Err("Filed to set up logging to store. " + err.Error())
-	}
-	cm.Logger = l
-	cm.Logger.Debug("CM logs going to the cm store")
 
 	//setup the cmStore
 	cm.Store = NewCMStore(cm.CmgrStoreClient)
@@ -156,6 +153,60 @@ func (cm ContainerManager) Start() {
 	//Reload and saved drivers and app from the cm store
 	libDatabox.Info("Restarting saved apps and drivers")
 	cm.reloadApps()
+
+	//start crash detectore
+	go cm.crashDetectore()
+
+}
+
+//Monitor docker events for crashed apps and drivers
+//If an app or driver crashes restart it to fix the
+//core-network registration
+func (cm ContainerManager) crashDetectore() {
+
+	restartDetected := map[string]string{}
+	uninstallDetected := map[string]string{}
+
+	eventChan, _ := cm.cli.Events(context.Background(), types.EventsOptions{})
+	for {
+		select {
+		case msg := <-eventChan:
+
+			if msg.Type == "service" && msg.Action == "remove" {
+				libDatabox.Debug("Uninstall detected" + msg.Actor.ID)
+				uninstallDetected[msg.Actor.ID] = msg.Actor.ID
+			}
+
+			if msg.Type == "container" && msg.Action == "kill" && msg.Actor.Attributes["signal"] == "9" {
+				libDatabox.Debug("Restart detected")
+				restartDetected[msg.Actor.Attributes["name"]] = msg.Actor.Attributes["name"]
+			}
+
+			if msg.Type == "container" && msg.Action == "die" {
+
+				name := msg.Actor.Attributes["com.docker.swarm.service.name"]
+				ContName := msg.Actor.Attributes["name"]
+				serviceID := msg.Actor.Attributes["com.docker.swarm.service.id"]
+
+				if _, ok := restartDetected[ContName]; ok { //is it being restarted?
+					delete(restartDetected, ContName)
+					libDatabox.Debug("Not restarting " + name + " this time restart detected")
+				} else if _, ok := uninstallDetected[serviceID]; ok { //is it being uninstall?
+					delete(uninstallDetected, serviceID)
+					libDatabox.Debug("Not restarting " + name + " this time uninstall detected")
+				} else if _, ok := msg.Actor.Attributes["databox.type"]; !ok {
+					//Its not a databox app or driver do nothing
+					libDatabox.Debug("Not restarting " + name + " its not a databox app or driver")
+				} else { //looks looks a crash restart it
+					libDatabox.Warn("Crash detected for " + name)
+					libDatabox.Warn("Restarting " + name)
+					cm.Restart(name)
+				}
+
+			}
+		}
+	}
+
 }
 
 // LaunchFromSLA will start a databox app or driver with the reliant stores and grant permissions required as described in the SLA
@@ -186,7 +237,7 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 	case libDatabox.DataboxTypeDriver:
 		service, serviceOptions, requiredNetworks = cm.getDriverConfig(sla, localContainerName, netConf)
 	default:
-		return errors.New("Unsupported image type")
+		return errors.New("[LaunchFromSLA] Unsupported image type")
 	}
 
 	pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image, cm.Options.DefaultRegistry, cm.Options.DefaultRegistryHost)
@@ -292,8 +343,11 @@ func (cm ContainerManager) Restart(name string) error {
 	}
 
 	//wait for the restarted container to start
-	newCont, err := cm.WaitForService(name, 10)
-	libDatabox.ChkErr(err)
+	newCont, err := cm.WaitForService(name, 20)
+	if err != nil {
+		libDatabox.Warn("Failed to restart " + name + " " + err.Error())
+		return err
+	}
 
 	//found restarted container !!!
 	//Stash the new container IP
@@ -439,10 +493,9 @@ func (cm ContainerManager) launchUI() {
 	name := cm.CoreIUName
 
 	sla := libDatabox.SLA{
-		Name:           name,
-		DockerImage:    cm.Options.CoreUIImage,
-		DockerImageTag: cm.Options.Version,
-		DataboxType:    libDatabox.DataboxTypeApp,
+		Name:        name,
+		DockerImage: cm.Options.CoreUIImage,
+		DataboxType: libDatabox.DataboxTypeApp,
 		Datasources: []libDatabox.DataSource{
 			libDatabox.DataSource{
 				Type:          "databox:func:ServiceStatus",
@@ -568,10 +621,9 @@ func (cm ContainerManager) launchAppStore() {
 	name := cm.AppStoreName
 
 	sla := libDatabox.SLA{
-		Name:           name,
-		DockerImage:    cm.Options.AppServerImage,
-		DockerImageTag: cm.Options.Version,
-		DataboxType:    libDatabox.DataboxTypeDriver,
+		Name:        name,
+		DockerImage: cm.Options.AppServerImage,
+		DataboxType: libDatabox.DataboxTypeDriver,
 		ResourceRequirements: libDatabox.ResourceRequirements{
 			Store: cm.CoreStoreName,
 		},
@@ -616,26 +668,40 @@ func (cm ContainerManager) launchCMStore() string {
 
 func (cm ContainerManager) calculateImageNameFromSLA(sla libDatabox.SLA) string {
 
+	if strings.Contains(sla.DockerImage, "/") && strings.Contains(sla.DockerImage, ":") {
+		//looks like a full tagged image
+		return sla.DockerImage
+	}
+
 	imageName := ""
+	registry := ""
+	version := ""
 
 	//work out the registry and image name
 	if sla.DockerImage != "" {
 		imageName = sla.DockerImage
 	} else {
-		imageName = cm.Options.DefaultRegistry + "/" + sla.Name
+		imageName = sla.Name
 	}
 
 	//add the arch
 	imageName += cm.ARCH
 
-	//work out the image tag
-	if sla.DockerImageTag != "" {
-		imageName += ":" + sla.DockerImageTag
+	//work out registry
+	if sla.DockerRegistry != "" {
+		registry = sla.DockerRegistry
 	} else {
-		imageName += ":" + cm.Options.Version
+		registry = cm.Options.DefaultRegistry
 	}
 
-	return imageName
+	//work out the image tag
+	if sla.DockerImageTag != "" {
+		version = sla.DockerImageTag
+	} else {
+		version = cm.Options.Version
+	}
+
+	return registry + "/" + imageName + ":" + version
 }
 
 func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerName string, netConf NetworkConfig) (swarm.ServiceSpec, types.ServiceCreateOptions, []string) {
@@ -692,7 +758,7 @@ func (cm ContainerManager) launchStore(requiredStore string, requiredStoreName s
 		return requiredStoreName
 	}
 
-	image := cm.Options.DefaultStoreImage + cm.ARCH + ":" + cm.Options.Version
+	image := cm.Options.DefaultStoreImage
 
 	service := constructDefaultServiceSpec(requiredStoreName, image, libDatabox.DataboxTypeStore, cm.Options.Version, netConf)
 
@@ -829,24 +895,22 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 
 	//set export permissions from export-whitelist
 	if len(sla.ExportWhitelists) > 0 {
-		urlsString := "destination = [\""
-		for i, whiteList := range sla.ExportWhitelists {
-			urlsString = urlsString + whiteList.Url
-			if i < len(sla.ExportWhitelists) {
-				urlsString = urlsString + ","
+		for _, whiteList := range sla.ExportWhitelists {
+			caveat := `{"destination":"` + whiteList.Url + `"}`
+
+			libDatabox.Debug("Adding Export permissions for " + localContainerName + " on " + whiteList.Url)
+
+			err = cm.addPermission(localContainerName, "export-service", "/export", "POST", caveat)
+			if err != nil {
+				libDatabox.Err("Adding write permissions for export-service " + err.Error())
+			}
+
+			err = cm.addPermission(localContainerName, "export-service", "/lp/export", "POST", caveat)
+			if err != nil {
+				libDatabox.Err("Adding write permissions for lp export-service " + err.Error())
 			}
 		}
-		//remove trailing ,
-		urlsString = strings.TrimRight(urlsString, ",")
-		//close the quote
-		urlsString = urlsString + `"]`
 
-		libDatabox.Debug("Adding Export permissions for " + localContainerName + " on " + urlsString)
-
-		err = cm.addPermission(localContainerName, "export-service", "/export/", "POST", []string{urlsString})
-		if err != nil {
-			libDatabox.Err("Adding write permissions for export-service " + err.Error())
-		}
 	}
 
 	//set export permissions from ExternalWhitelist
@@ -879,49 +943,49 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 
 			if libDatabox.IsActuator(ds) { //Deal with Actuators
 				libDatabox.Debug("Adding write permissions for Actuator " + datasourceName + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "POST", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "POST", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
 				}
 
 				libDatabox.Debug("Adding write permissions for Actuator " + datasourceName + " on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "POST", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "POST", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Actuator " + err.Error())
 				}
 
 				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + " on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
 				}
 
 				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
 				}
 
 			} else if libDatabox.IsFunc(ds) { //Deal with databox functions
 				libDatabox.Debug("Adding write permissions for functions request /notification/request/" + ds.Name + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/request/"+ds.Name+"/*", "POST", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/request/"+ds.Name+"/*", "POST", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for functions " + err.Error())
 				}
 				libDatabox.Debug("Adding read permissions for functions response /notification/response/" + ds.Name + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/response/"+ds.Name+"/*", "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), "/notification/response/"+ds.Name+"/*", "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for functions " + err.Error())
 				}
 			} else {
 				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + " on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName, "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
 				}
 
 				libDatabox.Debug("Adding read permissions for " + localContainerName + " on data source " + datasourceName + "/* on " + datasourceEndpoint.Hostname())
-				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", []string{})
+				err = cm.addPermission(localContainerName, datasourceEndpoint.Hostname(), datasourceName+"/*", "GET", "")
 				if err != nil {
 					libDatabox.Err("Adding write permissions for Datasource " + err.Error())
 				}
@@ -936,25 +1000,25 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 		requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store
 
 		libDatabox.Debug("Adding read permissions for container-manager on " + requiredStoreName + "/cat")
-		err = cm.addPermission("container-manager", requiredStoreName, "/cat", "GET", []string{})
+		err = cm.addPermission("container-manager", requiredStoreName, "/cat", "GET", "")
 		if err != nil {
 			libDatabox.Err("Adding read permissions for container-manager on /cat " + err.Error())
 		}
 
 		libDatabox.Debug("Adding write permissions for dependent store " + localContainerName + " on " + requiredStoreName + "/*")
-		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "POST", []string{})
+		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "POST", "")
 		if err != nil {
 			libDatabox.Err("Adding write permissions for dependent store " + err.Error())
 		}
 
 		libDatabox.Debug("Adding delete permissions for dependent store " + localContainerName + " on " + requiredStoreName + "/*")
-		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "DELETE", []string{})
+		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "DELETE", "")
 		if err != nil {
 			libDatabox.Err("Adding delete permissions for dependent store " + err.Error())
 		}
 
 		libDatabox.Debug("Adding read permissions for dependent store " + localContainerName + " on " + requiredStoreName + "/*")
-		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "GET", []string{})
+		err = cm.addPermission(localContainerName, requiredStoreName, "/*", "GET", "")
 		if err != nil {
 			libDatabox.Err("Adding read permissions for dependent store " + err.Error())
 		}
@@ -963,7 +1027,7 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 }
 
 //addPermission helper function to wraps ArbiterClient.GrantContainerPermissions
-func (cm ContainerManager) addPermission(name string, target string, path string, method string, caveats []string) error {
+func (cm ContainerManager) addPermission(name string, target string, path string, method string, caveat string) error {
 
 	newPermission := libDatabox.ContainerPermissions{
 		Name: name,
@@ -972,7 +1036,7 @@ func (cm ContainerManager) addPermission(name string, target string, path string
 			Path:   path,
 			Method: method,
 		},
-		Caveats: caveats,
+		Caveat: caveat,
 	}
 
 	return cm.ArbiterClient.GrantContainerPermissions(newPermission)
@@ -987,7 +1051,7 @@ func (cm ContainerManager) startExportService() {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
-				Image:   cm.Options.ExportServiceImage + cm.ARCH + ":" + cm.Options.Version,
+				Image:   cm.Options.ExportServiceImage,
 				Env:     []string{"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444"},
 				Secrets: cm.genorateSecrets("export-service", libDatabox.DataboxTypeStore),
 			},
