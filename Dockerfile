@@ -14,6 +14,7 @@ RUN go get -d github.com/docker/go-connections
 RUN rm -rf /go/src/github.com/docker/docker/vendor/github.com/docker/go-connections
 RUN go get -d github.com/me-box/lib-go-databox
 RUN go get -d golang.org/x/net/proxy
+RUN go get github.com/pkg/profile
 
 COPY . .
 RUN addgroup -S databox && adduser -S -g databox databox

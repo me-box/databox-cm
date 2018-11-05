@@ -6,9 +6,12 @@ import (
 	"os"
 
 	libDatabox "github.com/me-box/lib-go-databox"
+	"github.com/pkg/profile"
 )
 
 func main() {
+	// CPU profiling by default
+	p := profile.Start()
 
 	DOCKER_API_VERSION := "1.37" //TODO store version in ContainerManagerOptions
 	os.Setenv("DOCKER_API_VERSION", DOCKER_API_VERSION)
@@ -33,6 +36,8 @@ func main() {
 
 	//Start the databox cm Uis and do initial configuration
 	cm.Start()
+
+	p.Stop()
 
 	//Wait for a quit message
 	quit := make(chan int)

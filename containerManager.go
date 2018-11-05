@@ -105,7 +105,7 @@ func (cm ContainerManager) Start() {
 	//launch the CM store
 	cm.cmStoreURL = cm.launchCMStore()
 
-	//setup the cm to log to the store
+	//setup the cm to store
 	cm.CmgrStoreClient = libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", cm.cmStoreURL, false)
 
 	//setup the cmStore
@@ -271,7 +271,7 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 		cm.WaitForService(requiredStoreName, 10)
 	}
 
-	cm.addPermissionsFromSLA(sla)
+	go cm.addPermissionsFromSLA(sla)
 
 	_, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
 	if err != nil {
@@ -849,13 +849,16 @@ func (cm ContainerManager) genorateSecrets(containerName string, databoxType lib
 		},
 	})
 
-	cert := GenCert(
-		"./certs/containerManager.crt", //TODO Fix this
-		containerName,
-		[]string{"127.0.0.1"},
-		[]string{containerName},
-	)
-	secrets = append(secrets, cm.createSecret(strings.ToUpper(containerName)+".pem", cert, "DATABOX.pem"))
+	//only make https certs for apps and drivers
+	if databoxType == libDatabox.DataboxTypeDriver || databoxType == libDatabox.DataboxTypeApp {
+		cert := GenCert(
+			"./certs/containerManager.crt", //TODO Fix this
+			containerName,
+			[]string{"127.0.0.1"},
+			[]string{containerName},
+		)
+		secrets = append(secrets, cm.createSecret(strings.ToUpper(containerName)+".pem", cert, "DATABOX.pem"))
+	}
 
 	rawToken := GenerateArbiterToken()
 	b64TokenString := b64.StdEncoding.EncodeToString(rawToken)
@@ -1053,7 +1056,7 @@ func (cm ContainerManager) startExportService() {
 			ContainerSpec: &swarm.ContainerSpec{
 				Image:   cm.Options.ExportServiceImage,
 				Env:     []string{"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444"},
-				Secrets: cm.genorateSecrets("export-service", libDatabox.DataboxTypeStore),
+				Secrets: cm.genorateSecrets("export-service", libDatabox.DataboxTypeDriver),
 			},
 			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
 				Target: "databox-system-net",
