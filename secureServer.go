@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -42,13 +41,14 @@ func ServeSecure(cm *ContainerManager, password string) {
 }
 
 // Allows access to all /core-ui/ui/ paths except /core-ui/ui/api paths
-var allowedStaticPath, _ = regexp.Compile("^/core-ui/ui/(?!api).*$")
+var allowedStaticPath = "/core-ui/ui/"
+var exceptPath = "/core-ui/ui/api/"
 
 //A map to hold session tokens
 var sessionTokens sync.Map
 
 func auth(w http.ResponseWriter, r *http.Request, password string) bool {
-	if allowedStaticPath.MatchString(r.URL.Path) {
+	if strings.HasPrefix(r.URL.Path, allowedStaticPath) && !strings.HasPrefix(r.URL.Path, exceptPath) {
 		//its allowed no auth needed
 		return true
 	}
@@ -75,7 +75,9 @@ func auth(w http.ResponseWriter, r *http.Request, password string) bool {
 	sessionCookie, _ := r.Cookie("session")
 	if sessionCookie != nil {
 		_, ok := sessionTokens.Load(sessionCookie.Value)
-		return ok
+		if ok {
+			return true
+		}
 	}
 
 	libDatabox.Err("Password validation error!" + r.Header.Get("Authorization"))
