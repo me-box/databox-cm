@@ -711,6 +711,8 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 	service := constructDefaultServiceSpec(localContainerName, imageName, libDatabox.DataboxTypeDriver, cm.Options.Version, netConf)
 	service.Name = localContainerName
 
+	service.TaskTemplate.ContainerSpec.Env = append(service.TaskTemplate.ContainerSpec.Env, "DATABOX_STORE_URL="+cm.Options.DefaultAppStore)
+
 	return service, types.ServiceCreateOptions{}, []string{"arbiter"}
 }
 
