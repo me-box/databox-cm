@@ -1,5 +1,5 @@
 IMAGE_NAME=container-manager
-DEFAULT_REG=ktg
+DEFAULT_REG=databoxsystems
 VERSION=latest
 
 .PHONY: all
