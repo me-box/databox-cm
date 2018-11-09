@@ -1,7 +1,7 @@
-FROM golang:1.10.3-alpine3.8 as gobuild
+FROM golang:alpine as gobuild
 WORKDIR /
 ENV GOPATH="/go"
-RUN apk update && apk add pkgconfig build-base bash autoconf automake libtool gettext openrc git libzmq zeromq-dev mercurial
+RUN apk update && apk add build-base git zeromq-dev
 #COPY . . if you update the libs below build with --no-cache
 RUN go get -d github.com/gorilla/mux
 RUN go get -d github.com/gorilla/websocket
