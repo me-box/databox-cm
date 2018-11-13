@@ -31,6 +31,7 @@ func CmZestAPI(cm *ContainerManager) {
 
 	//expose functions
 	cm.CmgrStoreClient.FUNC.Register("databox", "ServiceStatus", libDatabox.ContentTypeJSON, ServiceStatus(cm))
+	cm.CmgrStoreClient.FUNC.Register("databox", "ListAllDatasources", libDatabox.ContentTypeJSON, ListAllDatasources(cm))
 
 	//
 	//Register and observe API command endpoints
@@ -68,8 +69,8 @@ func CmZestAPI(cm *ContainerManager) {
 		Location:       "",
 	}
 	cm.CmgrStoreClient.RegisterDatasource(DataMetadata)
-	go populateDataSources(cm)
-	go populateServiceStatus(cm)
+	//go populateDataSources(cm)
+	//go populateServiceStatus(cm)
 	go populateMobileAppQrCodeAndCerts(cm)
 
 }
@@ -77,7 +78,7 @@ func CmZestAPI(cm *ContainerManager) {
 func ServiceStatus(cm *ContainerManager) libDatabox.FuncHandler {
 	libDatabox.Info("API: registering ServiceStatus")
 	return func(contnetType libDatabox.StoreContentType, payload []byte) ([]byte, error) {
-		libDatabox.Info("API: ServiceStatus called contentType=" + string(contnetType) + "Payload=" + string(payload))
+		//libDatabox.Info("API: ServiceStatus called contentType=" + string(contnetType) + "Payload=" + string(payload))
 		type listResult struct {
 			Name         string          `json:"name"`
 			Type         string          `json:"type"`
@@ -130,8 +131,43 @@ func ServiceStatus(cm *ContainerManager) libDatabox.FuncHandler {
 			libDatabox.Err("[ServiceStatus] Error " + err.Error())
 		}
 
-		libDatabox.Info("API: ServiceStatus done returning=" + string(jsonString))
+		//libDatabox.Info("API: ServiceStatus done returning=" + string(jsonString))
 		return jsonString, nil
+	}
+}
+
+func ListAllDatasources(cm *ContainerManager) libDatabox.FuncHandler {
+	libDatabox.Debug("API: ListAllDatasources Install")
+	return func(contnetType libDatabox.StoreContentType, payload []byte) ([]byte, error) {
+		libDatabox.Debug("API: ListAllDatasources called contentType=" + string(contnetType))
+		hyperCatRoot, err := cm.ArbiterClient.GetRootDataSourceCatalogue()
+		if err != nil {
+			libDatabox.Err("[ListAllDatasources] GetRootDataSourceCatalogue " + err.Error())
+		}
+		var datasources []libDatabox.HypercatItem
+		for _, item := range hyperCatRoot.Items {
+			if strings.Contains(item.Href, "-core-store:5555") == false {
+				//TODO Tell john this should not be here !!
+				continue
+			}
+			//get the store cat
+			storeURL, _ := libDatabox.GetStoreURLFromDsHref(item.Href)
+			sc := libDatabox.NewCoreStoreClient(cm.ArbiterClient, "/run/secrets/ZMQ_PUBLIC_KEY", storeURL, false)
+			storeCat, err := sc.GetStoreDataSourceCatalogue(item.Href)
+			if err != nil {
+				libDatabox.Warn("[ListAllDatasources] GetStoreDataSourceCatalogue " + item.Href + " " + err.Error())
+			}
+			for _, ds := range storeCat.Items {
+				datasources = append(datasources, ds)
+			}
+		}
+		jsonString, err := json.Marshal(datasources)
+		if err != nil {
+			libDatabox.Err("[ListAllDatasources] Error " + err.Error())
+			return []byte{}, err
+		}
+
+		return jsonString, err
 	}
 }
 
