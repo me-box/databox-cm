@@ -175,11 +175,11 @@ func (d *Databox) startCoreNetwork() {
 
 	ctx := context.Background()
 
-	filters := filters.NewArgs()
-	filters.Add("name", "databox-network")
+	contFilter := filters.NewArgs()
+	contFilter.Add("name", "databox-network")
 
 	contList, _ := d.cli.ContainerList(ctx, types.ContainerListOptions{
-		Filters: filters,
+		Filters: contFilter,
 	})
 
 	//after CM update we do not need to do this again!!
@@ -192,6 +192,22 @@ func (d *Databox) startCoreNetwork() {
 
 	libDatabox.Info("Starting databox-network")
 
+	// lets make sure there are no old databox-system-net's hanging around.
+	// if databox-network container is not running at this point there
+	// should be no network either
+	netFilter := filters.NewArgs()
+	netFilter.Add("name", "databox-system-net")
+
+	netList, _ := d.cli.NetworkList(ctx, types.NetworkListOptions{
+		Filters: netFilter,
+	})
+
+	if len(netList) > 0 {
+		err := d.cli.NetworkRemove(ctx, netList[0].ID)
+		libDatabox.ChkErr(err)
+	}
+
+	//create a fresh databox-system-net
 	options := types.NetworkCreate{
 		Driver:     "overlay",
 		Attachable: true,
