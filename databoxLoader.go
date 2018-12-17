@@ -78,23 +78,29 @@ func (d *Databox) Start() (string, string, string) {
 	return d.DATABOX_ROOT_CA_ID, d.ZMQ_PUBLIC_KEY_ID, d.ZMQ_SECRET_KEY_ID
 }
 
+func (d Databox) getThisContainerID() string {
+	data, _ := ioutil.ReadFile("/proc/self/cgroup")
+	id := strings.Split(string(data), "/docker/")[3]
+	return id
+}
+
 func (d *Databox) checkForAndFixBadRestarts() bool {
 	ctx := context.Background()
 	f := filters.NewArgs()
 	f.Add("label", "databox.type")
 	services, err := d.cli.ServiceList(ctx, types.ServiceListOptions{Filters: f})
-	//cmServiceID := ""
+	cmServiceID := d.getThisContainerID()
 	libDatabox.ChkErr(err)
 	if len(services) > 1 { //the cm is running at this point so i would expect one service
 		libDatabox.Warn("Container manager starting up but we have old databox services.")
 		libDatabox.Warn("This was probably caused by a Container manager crash, host reboot, docker daemon restart")
-		libDatabox.Warn("Waitling for docker to settle......")
-		time.Sleep(time.Second * 15)
+		libDatabox.Warn("Waiting for docker to settle......")
+		time.Sleep(time.Second * 30)
 		libDatabox.Warn("Starting to clean up......")
 		for _, service := range services {
-			if service.Spec.Name == "container-manager" {
+			if service.ID == cmServiceID {
 				//lets not kill ourselves, that's just silly
-				libDatabox.Debug("Skipping container-manager")
+				libDatabox.Debug("Skipping container-manager id=" + cmServiceID)
 				//cmServiceID = service.ID
 				continue
 			}
@@ -120,7 +126,7 @@ func (d *Databox) checkForAndFixBadRestarts() bool {
 					}
 					d.cli.NetworkDisconnect(ctx, network.ID, connected.Name, true)
 				}
-				time.Sleep(time.Second * 5)
+				time.Sleep(time.Second * 15)
 				d.cli.NetworkRemove(ctx, network.ID)
 			}
 		}
@@ -138,8 +144,8 @@ func (d *Databox) checkForAndFixBadRestarts() bool {
 			}
 		}
 
-		libDatabox.Warn("Waitling for docker to recvover ......")
-		time.Sleep(time.Second * 20)
+		libDatabox.Warn("Waiting for docker to recvover ......")
+		time.Sleep(time.Second * 30)
 
 		return true
 	}
