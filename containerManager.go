@@ -242,7 +242,7 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 
 	pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image, cm.Options.DefaultRegistry, cm.Options.DefaultRegistryHost)
 
-	//TODO Check image is available and make some nose if its missing !!!
+	//Check image is available and make some noise if its missing !!!
 	if !cm.imageExists(service.TaskTemplate.ContainerSpec.Image) {
 		return errors.New("Can't install " + localContainerName + " cant find the image " + service.TaskTemplate.ContainerSpec.Image)
 	}
