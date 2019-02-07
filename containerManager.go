@@ -247,6 +247,25 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 		return errors.New("Can't install " + localContainerName + " cant find the image " + service.TaskTemplate.ContainerSpec.Image)
 	}
 
+	exits, devMount := cm.getDevMountFor(localContainerName)
+	if exits == true {
+		//its a dev image mount the ContSrcPath folder in HostSrcPath
+		libDatabox.Info("Mounting " + devMount.ContSrcPath + " from " + localContainerName + " to " + devMount.HostSrcPath + " on the host")
+
+		//check path exists and error if its missing!
+		if _, err := os.Stat(devMount.HostSrcPath); err != nil {
+			return errors.New("Can't install " + localContainerName + ". HostSrcPath " + devMount.HostSrcPath + "not found")
+		}
+
+		service.TaskTemplate.ContainerSpec.Mounts = []mount.Mount{
+			mount.Mount{
+				Source: devMount.HostSrcPath,
+				Target: devMount.ContSrcPath,
+				Type:   "bind",
+			},
+		}
+	}
+
 	//Add secrests to container
 	service.TaskTemplate.ContainerSpec.Secrets = cm.genorateSecrets(localContainerName, sla.DataboxType)
 
@@ -297,6 +316,19 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 func (cm *ContainerManager) IsInstalled(name string) bool {
 	_, ok := cm.InstalledComponents[name]
 	return ok
+}
+
+// getDevMountFor return the DevMount from Options.DevMounts that matches contName
+// returns false if no mach is found
+func (cm *ContainerManager) getDevMountFor(contName string) (bool, libDatabox.DevMount) {
+
+	for _, m := range cm.Options.DevMounts {
+		if m.ContName == contName {
+			return true, m
+		}
+	}
+
+	return false, libDatabox.DevMount{}
 }
 
 func (cm *ContainerManager) imageExists(image string) bool {
