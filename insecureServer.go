@@ -15,7 +15,7 @@ var pubCertFullPath = "/certs/containerManagerPub.crt"
 func ServeInsecure() {
 
 	router := mux.NewRouter()
-	static := http.FileServer(http.Dir("./www/http"))
+	static := http.FileServer(http.Dir("./www"))
 	databoxHttpsClient := libDatabox.NewDataboxHTTPsAPIWithPaths("/certs/containerManager.crt")
 
 	router.PathPrefix("/cert{.pem|.der}").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

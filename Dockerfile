@@ -1,7 +1,7 @@
-FROM golang:1.10.3-alpine3.8 as gobuild
+FROM golang:1.11.5-alpine3.8 as gobuild
 WORKDIR /
 ENV GOPATH="/go"
-RUN apk update && apk add pkgconfig build-base bash autoconf automake libtool gettext openrc git libzmq zeromq-dev mercurial
+RUN apk update && apk add build-base git zeromq-dev
 #COPY . . if you update the libs below build with --no-cache
 RUN go get -d github.com/gorilla/mux
 RUN go get -d github.com/gorilla/websocket
@@ -12,8 +12,8 @@ RUN go get -d github.com/pkg/errors
 RUN go get -d github.com/skip2/go-qrcode
 RUN go get -d github.com/docker/go-connections
 RUN rm -rf /go/src/github.com/docker/docker/vendor/github.com/docker/go-connections
-RUN go get -d github.com/me-box/lib-go-databox
 RUN go get -d golang.org/x/net/proxy
+RUN go get -d github.com/me-box/lib-go-databox
 
 COPY . .
 RUN addgroup -S databox && adduser -S -g databox databox

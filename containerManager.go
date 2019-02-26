@@ -242,9 +242,28 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 
 	pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image, cm.Options.DefaultRegistry, cm.Options.DefaultRegistryHost)
 
-	//TODO Check image is available and make some nose if its missing !!!
+	//Check image is available and make some noise if its missing !!!
 	if !cm.imageExists(service.TaskTemplate.ContainerSpec.Image) {
 		return errors.New("Can't install " + localContainerName + " cant find the image " + service.TaskTemplate.ContainerSpec.Image)
+	}
+
+	exits, devMount := cm.getDevMountFor(localContainerName)
+	if exits == true {
+		//its a dev image mount the ContSrcPath folder in HostSrcPath
+		libDatabox.Info("Mounting " + devMount.ContSrcPath + " from " + localContainerName + " to " + devMount.HostSrcPath + " on the host")
+
+		//check path exists and error if its missing!
+		if _, err := os.Stat(devMount.HostSrcPath); err != nil {
+			return errors.New("Can't install " + localContainerName + ". HostSrcPath " + devMount.HostSrcPath + "not found")
+		}
+
+		service.TaskTemplate.ContainerSpec.Mounts = []mount.Mount{
+			mount.Mount{
+				Source: devMount.HostSrcPath,
+				Target: devMount.ContSrcPath,
+				Type:   "bind",
+			},
+		}
 	}
 
 	//Add secrests to container
@@ -297,6 +316,19 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 func (cm *ContainerManager) IsInstalled(name string) bool {
 	_, ok := cm.InstalledComponents[name]
 	return ok
+}
+
+// getDevMountFor return the DevMount from Options.DevMounts that matches contName
+// returns false if no mach is found
+func (cm *ContainerManager) getDevMountFor(contName string) (bool, libDatabox.DevMount) {
+
+	for _, m := range cm.Options.DevMounts {
+		if m.ContName == contName {
+			return true, m
+		}
+	}
+
+	return false, libDatabox.DevMount{}
 }
 
 func (cm *ContainerManager) imageExists(image string) bool {
@@ -518,6 +550,26 @@ func (cm ContainerManager) launchUI() {
 				},
 			},
 			libDatabox.DataSource{
+				Type:          "databox:func:ListAllDatasources",
+				Required:      true,
+				Name:          "ListAllDatasources",
+				Clientid:      "CM_API_ListAllDatasources",
+				Granularities: []string{},
+				Hypercat: libDatabox.HypercatItem{
+					ItemMetadata: []interface{}{
+						libDatabox.RelValPairBool{
+							Rel: "urn:X-databox:rels:isFunc",
+							Val: true,
+						},
+						libDatabox.RelValPair{
+							Rel: "urn:X-databox:rels:hasDatasourceid",
+							Val: "ListAllDatasources",
+						},
+					},
+					Href: "tcp://container-manager-" + cm.CoreStoreName + ":5555/",
+				},
+			},
+			libDatabox.DataSource{
 				Type:          "databox:container-manager:api",
 				Required:      true,
 				Name:          "container-manager:api",
@@ -710,6 +762,8 @@ func (cm ContainerManager) getDriverConfig(sla libDatabox.SLA, localContainerNam
 
 	service := constructDefaultServiceSpec(localContainerName, imageName, libDatabox.DataboxTypeDriver, cm.Options.Version, netConf)
 	service.Name = localContainerName
+
+	service.TaskTemplate.ContainerSpec.Env = append(service.TaskTemplate.ContainerSpec.Env, "DATABOX_STORE_URL="+cm.Options.DefaultAppStore)
 
 	return service, types.ServiceCreateOptions{}, []string{"arbiter"}
 }

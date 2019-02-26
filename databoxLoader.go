@@ -78,23 +78,29 @@ func (d *Databox) Start() (string, string, string) {
 	return d.DATABOX_ROOT_CA_ID, d.ZMQ_PUBLIC_KEY_ID, d.ZMQ_SECRET_KEY_ID
 }
 
+func (d Databox) getThisContainerID() string {
+	data, _ := ioutil.ReadFile("/proc/self/cgroup")
+	id := strings.Split(string(data), "/docker/")[3]
+	return id
+}
+
 func (d *Databox) checkForAndFixBadRestarts() bool {
 	ctx := context.Background()
 	f := filters.NewArgs()
 	f.Add("label", "databox.type")
 	services, err := d.cli.ServiceList(ctx, types.ServiceListOptions{Filters: f})
-	//cmServiceID := ""
+	cmServiceID := d.getThisContainerID()
 	libDatabox.ChkErr(err)
 	if len(services) > 1 { //the cm is running at this point so i would expect one service
 		libDatabox.Warn("Container manager starting up but we have old databox services.")
 		libDatabox.Warn("This was probably caused by a Container manager crash, host reboot, docker daemon restart")
-		libDatabox.Warn("Waitling for docker to settle......")
-		time.Sleep(time.Second * 15)
+		libDatabox.Warn("Waiting for docker to settle......")
+		time.Sleep(time.Second * 30)
 		libDatabox.Warn("Starting to clean up......")
 		for _, service := range services {
-			if service.Spec.Name == "container-manager" {
+			if service.ID == cmServiceID {
 				//lets not kill ourselves, that's just silly
-				libDatabox.Debug("Skipping container-manager")
+				libDatabox.Debug("Skipping container-manager id=" + cmServiceID)
 				//cmServiceID = service.ID
 				continue
 			}
@@ -120,7 +126,7 @@ func (d *Databox) checkForAndFixBadRestarts() bool {
 					}
 					d.cli.NetworkDisconnect(ctx, network.ID, connected.Name, true)
 				}
-				time.Sleep(time.Second * 5)
+				time.Sleep(time.Second * 15)
 				d.cli.NetworkRemove(ctx, network.ID)
 			}
 		}
@@ -138,8 +144,8 @@ func (d *Databox) checkForAndFixBadRestarts() bool {
 			}
 		}
 
-		libDatabox.Warn("Waitling for docker to recvover ......")
-		time.Sleep(time.Second * 20)
+		libDatabox.Warn("Waiting for docker to recvover ......")
+		time.Sleep(time.Second * 30)
 
 		return true
 	}
@@ -169,11 +175,11 @@ func (d *Databox) startCoreNetwork() {
 
 	ctx := context.Background()
 
-	filters := filters.NewArgs()
-	filters.Add("name", "databox-network")
+	contFilter := filters.NewArgs()
+	contFilter.Add("name", "databox-network")
 
 	contList, _ := d.cli.ContainerList(ctx, types.ContainerListOptions{
-		Filters: filters,
+		Filters: contFilter,
 	})
 
 	//after CM update we do not need to do this again!!
@@ -186,6 +192,22 @@ func (d *Databox) startCoreNetwork() {
 
 	libDatabox.Info("Starting databox-network")
 
+	// lets make sure there are no old databox-system-net's hanging around.
+	// if databox-network container is not running at this point there
+	// should be no network either
+	netFilter := filters.NewArgs()
+	netFilter.Add("name", "databox-system-net")
+
+	netList, _ := d.cli.NetworkList(ctx, types.NetworkListOptions{
+		Filters: netFilter,
+	})
+
+	if len(netList) > 0 {
+		err := d.cli.NetworkRemove(ctx, netList[0].ID)
+		libDatabox.ChkErr(err)
+	}
+
+	//create a fresh databox-system-net
 	options := types.NetworkCreate{
 		Driver:     "overlay",
 		Attachable: true,
