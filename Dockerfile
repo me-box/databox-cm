@@ -1,4 +1,4 @@
-FROM golang:alpine as gobuild
+FROM golang:1.11.5-alpine3.8 as gobuild
 WORKDIR /
 ENV GOPATH="/go"
 RUN apk update && apk add build-base git zeromq-dev
