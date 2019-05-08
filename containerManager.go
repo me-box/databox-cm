@@ -91,7 +91,7 @@ func (cm ContainerManager) Start() {
 	//wait for the arbiter
 	_, err := cm.WaitForService("arbiter", 10)
 	if err != nil {
-		libDatabox.Err("Filed to register the cm with the arbiter. " + err.Error())
+		libDatabox.Err("Failed to register the cm with the arbiter. " + err.Error())
 	}
 
 	//start the export service and register with the Arbiter
@@ -100,8 +100,21 @@ func (cm ContainerManager) Start() {
 	//register CM with arbiter - this is needed as the CM now has a store!
 	err = cm.ArbiterClient.RegesterDataboxComponent("container-manager", cm.ArbiterClient.ArbiterToken, libDatabox.DataboxTypeApp)
 	if err != nil {
-		libDatabox.Err("Filed to register the cm with the arbiter. " + err.Error())
+		libDatabox.Err("Failed to register the cm with the arbiter. " + err.Error())
 	}
+
+	//start the core-logger
+	cm.startCoreLogger()
+	if err != nil {
+		libDatabox.Err("core-logger Failed to start. " + err.Error())
+	}
+
+	//setup observing arbiter
+	err = StartLoggingArbiter("tcp://arbiter:4444", "tcp://arbiter:4445", "/*", "/run/secrets/ZMQ_PUBLIC_KEY", cm.ArbiterClient.ArbiterToken, "0", cm.Request, cm.ArbiterClient)
+	if err != nil {
+		libDatabox.Err("core-logger Failed to setup logging for arbiter. " + err.Error())
+	}
+
 	//launch the CM store
 	cm.cmStoreURL = cm.launchCMStore()
 
@@ -209,7 +222,7 @@ func (cm ContainerManager) crashDetectore() {
 
 }
 
-// LaunchFromSLA will start a databox app or driver with the reliant stores and grant permissions required as described in the SLA
+// LaunchFromSLA will start a databox app or driver with the required stores and grant permissions as described in the SLA
 func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 
 	//Make the localContainerName
@@ -288,6 +301,8 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 	if requiredStoreName != "" {
 		cm.launchStore(sla.ResourceRequirements.Store, requiredStoreName, netConf)
 		cm.WaitForService(requiredStoreName, 10)
+		libDatabox.Debug("networksToConnect core-logger")
+		cm.CoreNetworkClient.ConnectEndpoints(requiredStoreName, []string{"core-logger"})
 	}
 
 	cm.addPermissionsFromSLA(sla)
@@ -308,6 +323,14 @@ func (cm ContainerManager) LaunchFromSLA(sla libDatabox.SLA, save bool) error {
 	cm.InstalledComponents[localContainerName] = localContainerName
 
 	libDatabox.Info("Successfully installed " + sla.Name)
+
+	//setup the core logger for stores after we have granted the permissions and started the store.
+	if requiredStoreName != "" {
+		err := StartLoggingStore("tcp://"+requiredStoreName+":5555", "tcp://"+requiredStoreName+":5556", "/*", "/run/secrets/ZMQ_PUBLIC_KEY", "0", cm.Request, cm.ArbiterClient)
+		if err != nil {
+			libDatabox.Err("core-logger failed to setup logging for " + requiredStoreName + ". " + err.Error())
+		}
+	}
 
 	return nil
 }
@@ -519,182 +542,6 @@ func (cm ContainerManager) reloadApps() {
 
 }
 
-// launchAppStore start the app store driver
-func (cm ContainerManager) launchUI() {
-
-	name := cm.CoreIUName
-
-	sla := libDatabox.SLA{
-		Name:        name,
-		DockerImage: cm.Options.CoreUIImage,
-		DataboxType: libDatabox.DataboxTypeApp,
-		Datasources: []libDatabox.DataSource{
-			libDatabox.DataSource{
-				Type:          "databox:func:ServiceStatus",
-				Required:      true,
-				Name:          "ServiceStatus",
-				Clientid:      "CM_API_ServiceStatus",
-				Granularities: []string{},
-				Hypercat: libDatabox.HypercatItem{
-					ItemMetadata: []interface{}{
-						libDatabox.RelValPairBool{
-							Rel: "urn:X-databox:rels:isFunc",
-							Val: true,
-						},
-						libDatabox.RelValPair{
-							Rel: "urn:X-databox:rels:hasDatasourceid",
-							Val: "ServiceStatus",
-						},
-					},
-					Href: "tcp://container-manager-" + cm.CoreStoreName + ":5555/",
-				},
-			},
-			libDatabox.DataSource{
-				Type:          "databox:func:ListAllDatasources",
-				Required:      true,
-				Name:          "ListAllDatasources",
-				Clientid:      "CM_API_ListAllDatasources",
-				Granularities: []string{},
-				Hypercat: libDatabox.HypercatItem{
-					ItemMetadata: []interface{}{
-						libDatabox.RelValPairBool{
-							Rel: "urn:X-databox:rels:isFunc",
-							Val: true,
-						},
-						libDatabox.RelValPair{
-							Rel: "urn:X-databox:rels:hasDatasourceid",
-							Val: "ListAllDatasources",
-						},
-					},
-					Href: "tcp://container-manager-" + cm.CoreStoreName + ":5555/",
-				},
-			},
-			libDatabox.DataSource{
-				Type:          "databox:container-manager:api",
-				Required:      true,
-				Name:          "container-manager:api",
-				Clientid:      "CM_API",
-				Granularities: []string{},
-				Hypercat: libDatabox.HypercatItem{
-					ItemMetadata: []interface{}{
-						libDatabox.RelValPairBool{
-							Rel: "urn:X-databox:rels:isActuator",
-							Val: true,
-						},
-						libDatabox.RelValPair{
-							Rel: "urn:X-databox:rels:hasDatasourceid",
-							Val: "api",
-						},
-					},
-					Href: "tcp://container-manager-" + cm.CoreStoreName + ":5555/kv/api",
-				},
-			},
-			libDatabox.DataSource{
-				Type:          "databox:container-manager:data",
-				Required:      true,
-				Name:          "container-manager:data",
-				Clientid:      "CM_DATA",
-				Granularities: []string{},
-				Hypercat: libDatabox.HypercatItem{
-					ItemMetadata: []interface{}{
-						libDatabox.RelValPairBool{
-							Rel: "urn:X-databox:rels:isActuator",
-							Val: false,
-						},
-						libDatabox.RelValPair{
-							Rel: "urn:X-databox:rels:hasDatasourceid",
-							Val: "data",
-						},
-					},
-					Href: "tcp://container-manager-" + cm.CoreStoreName + ":5555/kv/data",
-				},
-			},
-			libDatabox.DataSource{
-				Type:          "databox:manifests:app",
-				Required:      true,
-				Name:          "databox Apps",
-				Clientid:      "APPS",
-				Granularities: []string{},
-				Hypercat: libDatabox.HypercatItem{
-					ItemMetadata: []interface{}{
-						libDatabox.RelValPair{
-							Rel: "urn:X-databox:rels:hasDatasourceid",
-							Val: "apps",
-						},
-					},
-					Href: "tcp://" + cm.AppStoreName + "-" + cm.CoreStoreName + ":5555/kv/apps",
-				},
-			},
-			libDatabox.DataSource{
-				Type:          "databox:manifests:driver",
-				Required:      true,
-				Name:          "databox Drivers",
-				Clientid:      "DRIVERS",
-				Granularities: []string{},
-				Hypercat: libDatabox.HypercatItem{
-					ItemMetadata: []interface{}{
-						libDatabox.RelValPair{
-							Rel: "urn:X-databox:rels:hasDatasourceid",
-							Val: "drivers",
-						},
-					},
-					Href: "tcp://" + cm.AppStoreName + "-" + cm.CoreStoreName + ":5555/kv/drivers",
-				},
-			},
-			libDatabox.DataSource{
-				Type:          "databox:manifests:all",
-				Required:      true,
-				Name:          "databox manifests",
-				Clientid:      "ALL",
-				Granularities: []string{},
-				Hypercat: libDatabox.HypercatItem{
-					ItemMetadata: []interface{}{
-						libDatabox.RelValPair{
-							Rel: "urn:X-databox:rels:hasDatasourceid",
-							Val: "all",
-						},
-					},
-					Href: "tcp://" + cm.AppStoreName + "-" + cm.CoreStoreName + ":5555" + "/kv/all",
-				},
-			},
-		},
-	}
-
-	err := cm.LaunchFromSLA(sla, false)
-	libDatabox.ChkErr(err)
-
-	_, err = cm.WaitForService(name, 10)
-	libDatabox.ChkErr(err)
-
-}
-
-// launchAppStore start the app store driver
-func (cm ContainerManager) launchAppStore() {
-	name := cm.AppStoreName
-
-	sla := libDatabox.SLA{
-		Name:        name,
-		DockerImage: cm.Options.AppServerImage,
-		DataboxType: libDatabox.DataboxTypeDriver,
-		ResourceRequirements: libDatabox.ResourceRequirements{
-			Store: cm.CoreStoreName,
-		},
-		ExternalWhitelist: []libDatabox.ExternalWhitelist{
-			libDatabox.ExternalWhitelist{
-				Urls:        []string{"https://github.com", "https://www.github.com"},
-				Description: "Needed to access the manifests stored on github",
-			},
-		},
-	}
-
-	err := cm.LaunchFromSLA(sla, false)
-	libDatabox.ChkErr(err)
-
-	_, err = cm.WaitForService(name, 10)
-	libDatabox.ChkErr(err)
-
-}
-
 // launchCMStore start a core-store the the container manager to store its configuration
 func (cm ContainerManager) launchCMStore() string {
 	//startCMStore
@@ -714,6 +561,12 @@ func (cm ContainerManager) launchCMStore() string {
 
 	_, err := cm.WaitForService(requiredStoreName, 10)
 	libDatabox.ChkErr(err)
+
+	//start logging CMStore
+	err = StartLoggingStore(cm.cmStoreURL, strings.Replace(cm.cmStoreURL, ":5555", ":5556", 1), "/*", "/run/secrets/ZMQ_PUBLIC_KEY", "0", cm.Request, cm.ArbiterClient)
+	if err != nil {
+		libDatabox.Err("core-logger failed to setup logging for " + cm.cmStoreURL + ". " + err.Error())
+	}
 
 	return "tcp://container-manager-" + cm.CoreStoreName + ":5555"
 }
@@ -1053,10 +906,23 @@ func (cm ContainerManager) addPermissionsFromSLA(sla libDatabox.SLA) {
 	if sla.ResourceRequirements.Store != "" {
 		requiredStoreName := sla.Name + "-" + sla.ResourceRequirements.Store
 
-		libDatabox.Debug("Adding read permissions for container-manager on " + requiredStoreName + "/cat")
-		err = cm.addPermission("container-manager", requiredStoreName, "/cat", "GET", "")
-		if err != nil {
-			libDatabox.Err("Adding read permissions for container-manager on /cat " + err.Error())
+		// libDatabox.Debug("Adding read permissions for container-manager on " + requiredStoreName + "/cat")
+		// err = cm.addPermission("container-manager", requiredStoreName, "/cat", "GET", "")
+		// if err != nil {
+		// 	libDatabox.Err("Adding read permissions for container-manager on /cat " + err.Error())
+		// }
+
+		if localContainerName != "container-manager" {
+			libDatabox.Debug("Adding read permissions for container-manager to deligate to core-logger on " + requiredStoreName + "/*")
+			//TODO this needs to be more restrictive add observe=audit caveat
+			err = cm.addPermission("container-manager", requiredStoreName, "/*", "GET", "")
+			if err != nil {
+				libDatabox.Err("Adding read permissions for core-logger on /* " + err.Error())
+			}
+			err = cm.addPermission("core-logger", requiredStoreName, "/*", "GET", "")
+			if err != nil {
+				libDatabox.Err("Adding read permissions for core-logger on /* " + err.Error())
+			}
 		}
 
 		libDatabox.Debug("Adding write permissions for dependent store " + localContainerName + " on " + requiredStoreName + "/*")
@@ -1094,34 +960,5 @@ func (cm ContainerManager) addPermission(name string, target string, path string
 	}
 
 	return cm.ArbiterClient.GrantContainerPermissions(newPermission)
-
-}
-
-func (cm ContainerManager) startExportService() {
-
-	service := swarm.ServiceSpec{
-		Annotations: swarm.Annotations{
-			Labels: map[string]string{"databox.type": "system"},
-		},
-		TaskTemplate: swarm.TaskSpec{
-			ContainerSpec: &swarm.ContainerSpec{
-				Image:   cm.Options.ExportServiceImage,
-				Env:     []string{"DATABOX_ARBITER_ENDPOINT=tcp://arbiter:4444"},
-				Secrets: cm.genorateSecrets("export-service", libDatabox.DataboxTypeStore),
-			},
-			Networks: []swarm.NetworkAttachmentConfig{swarm.NetworkAttachmentConfig{
-				Target: "databox-system-net",
-			}},
-		},
-	}
-
-	service.Name = "export-service"
-
-	serviceOptions := types.ServiceCreateOptions{}
-
-	pullImageIfRequired(service.TaskTemplate.ContainerSpec.Image, cm.Options.DefaultRegistry, cm.Options.DefaultRegistryHost)
-
-	_, err := cm.cli.ServiceCreate(context.Background(), service, serviceOptions)
-	libDatabox.ChkErrFatal(err)
 
 }

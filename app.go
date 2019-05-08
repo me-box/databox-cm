@@ -24,10 +24,10 @@ func main() {
 	generateArbiterTokens()
 
 	databox := NewDataboxLoader(&options)
-	rootCASecretID, zmqPublic, zmqPrivate := databox.Start()
-	libDatabox.Debug("key IDs :: " + rootCASecretID + " " + zmqPublic + " " + zmqPrivate)
+	rootCASecretID, zmqPublicSecId, zmqPrivateSecId := databox.Start()
+	libDatabox.Debug("key IDs :: " + rootCASecretID + " " + zmqPublicSecId + " " + zmqPrivateSecId)
 
-	cm := NewContainerManager(rootCASecretID, zmqPublic, zmqPrivate, &options)
+	cm := NewContainerManager(rootCASecretID, zmqPublicSecId, zmqPrivateSecId, &options)
 	_, err = cm.WaitForService("arbiter", 10)
 	libDatabox.ChkErrFatal(err)
 

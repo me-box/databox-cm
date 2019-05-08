@@ -118,6 +118,7 @@ func (cnc CoreNetworkClient) PreConfig(localContainerName string, sla libDatabox
 		if err != nil {
 			libDatabox.Err("[PreConfig] NetworkConnect Error " + err.Error())
 		}
+
 		time.Sleep(time.Second * 5)
 		//refresh network status
 		network, err = cnc.cli.NetworkInspect(context.Background(), networkCreateResponse.ID, types.NetworkInspectOptions{})
@@ -255,12 +256,24 @@ func (cnc CoreNetworkClient) DisconnectEndpoints(serviceName string, netConfig P
 
 func (cnc CoreNetworkClient) RegisterPrivileged() error {
 
-	cmIP, err := cnc.getCmIP()
+	cmIP, err := cnc.getIP("container-manager")
 	if err != nil {
 		return err
 	}
 
 	jsonStr := "{\"src_ip\":\"" + cmIP + "\"}"
+	return cnc.post("RegisterPrivileged", []byte(jsonStr), "https://databox-network:8080/privileged")
+
+}
+
+func (cnc CoreNetworkClient) RegisterPrivilegedByName(name string) error {
+
+	IP, err := cnc.getIP(name)
+	if err != nil {
+		return err
+	}
+
+	jsonStr := "{\"src_ip\":\"" + IP + "\"}"
 	return cnc.post("RegisterPrivileged", []byte(jsonStr), "https://databox-network:8080/privileged")
 
 }
@@ -283,25 +296,25 @@ func (cnc CoreNetworkClient) ServiceRestart(serviceName string, oldIP string, ne
 
 }
 
-func (cnc CoreNetworkClient) getCmIP() (string, error) {
+func (cnc CoreNetworkClient) getIP(name string) (string, error) {
 
 	f := filters.NewArgs()
-	f.Add("name", "container-manager")
+	f.Add("name", name)
 
 	containerList, _ := cnc.cli.ContainerList(context.Background(), types.ContainerListOptions{
 		Filters: f,
 	})
 
 	if len(containerList) < 1 {
-		libDatabox.Err("[getCmIP] Error no CM found for core-network")
-		return "", errors.New("No CM found for core-network")
+		libDatabox.Err("[getCmIP] Error no " + name + " found for core-network")
+		return "", errors.New("No " + name + " found for core-network")
 	}
 
 	if _, ok := containerList[0].NetworkSettings.Networks["databox-system-net"]; ok {
 		return containerList[0].NetworkSettings.Networks["databox-system-net"].IPAddress, nil
 	}
 
-	libDatabox.Err("[getCmIP] CM not on core-network")
-	return "", errors.New("CM not on core-network")
+	libDatabox.Err("[getCmIP] " + name + " not on core-network")
+	return "", errors.New(name + " not on core-network")
 
 }
